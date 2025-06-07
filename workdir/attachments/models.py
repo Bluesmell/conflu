@@ -6,7 +6,7 @@ class Attachment(models.Model):
     page = models.ForeignKey(Page, on_delete=models.CASCADE, related_name='attachments')
     uploader = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='uploaded_attachments')
     file_name = models.CharField(max_length=255)
-    file = models.FileField(upload_to='attachments_placeholder/%Y/%m/%d/')
+    file = models.FileField(upload_to='attachments/%Y/%m/%d/')
     mime_type = models.CharField(max_length=100)
     size_bytes = models.BigIntegerField()
     scan_status = models.CharField(max_length=20, choices=SCAN_STATUS_CHOICES, default='pending', db_index=True)
