@@ -6,6 +6,7 @@ from datetime import timedelta
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.celery import CeleryIntegration
+import sys # Added for checking 'test' in sys.argv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT_DIR = BASE_DIR.parent
@@ -116,3 +117,15 @@ CELERY_TIMEZONE = 'UTC'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_SEND_SENT_EVENT = True
 # CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler' # If using django-celery-beat
+
+# Test specific settings
+if 'test' in sys.argv or 'pytest' in sys.argv:
+    print("DEBUG: Applying test-specific Celery settings: CELERY_TASK_ALWAYS_EAGER=True")
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True  # Makes task errors raise in the test
+    # To prevent Redis connection attempts for broker/backend during tests if not needed:
+    # CELERY_BROKER_URL = 'memory://'
+    # CELERY_RESULT_BACKEND = 'django-db' # or 'cache+memory://' or specific test backend
+    # For now, ALWAYS_EAGER should prevent most connections.
+    # If cache is also Redis, tests might still need Redis if not mocked.
+    # CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}} # Example for tests
