@@ -6,7 +6,7 @@ from datetime import timedelta
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.celery import CeleryIntegration
-import sys # Added for checking 'test' in sys.argv
+import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT_DIR = BASE_DIR.parent
@@ -25,28 +25,58 @@ ALLOWED_HOSTS_ENV = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1')
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_ENV.split(',') if host.strip()]
 
 INSTALLED_APPS = [
-    'django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes',
-    'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles',
-    'rest_framework', 'rest_framework_simplejwt', 'guardian',
-    'drf_spectacular', 'drf_spectacular_sidecar',
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'django.contrib.sites',
+
+    'allauth',
+    'allauth.account',
+    # 'allauth.socialaccount',
+
+    'rest_framework',
+    'rest_framework.authtoken', # Required by dj-rest-auth if not using JWT for it
+    'dj_rest_auth',
+    'dj_rest_auth.registration', # Enables /registration/ endpoint via allauth
+
+    'rest_framework_simplejwt',
+    'guardian',
+    'drf_spectacular',
+    'drf_spectacular_sidecar',
     'storages',
-    'core.apps.CoreConfig', 'users.apps.UsersConfig', 'workspaces.apps.WorkspacesConfig',
-    'pages.apps.PagesConfig', 'attachments.apps.AttachmentsConfig', 'importer.apps.ImporterConfig',
-    'llm_integrations.apps.LlmIntegrationsConfig', 'api.apps.ApiConfig',
+
+    'core.apps.CoreConfig',
+    'users.apps.UsersConfig',
+    'workspaces.apps.WorkspacesConfig',
+    'pages.apps.PagesConfig',
+    'attachments.apps.AttachmentsConfig',
+    'importer.apps.ImporterConfig',
+    'llm_integrations.apps.LlmIntegrationsConfig',
+    'api.apps.ApiConfig',
     'user_notifications.apps.UserNotificationsConfig',
-    # 'django_celery_beat', # For scheduled tasks, if used later
+    # 'django_celery_beat',
 ]
+
+SITE_ID = 1
 
 AUTHENTICATION_BACKENDS = (
     'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
     'guardian.backends.ObjectPermissionBackend',
 )
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware', 'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware', 'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
 ]
 ROOT_URLCONF = 'conflu_project_root_config.urls'
 TEMPLATES = [{'BACKEND': 'django.template.backends.django.DjangoTemplates', 'DIRS': [], 'APP_DIRS': True, 'OPTIONS': {'context_processors': ['django.template.context_processors.request', 'django.contrib.auth.context_processors.auth', 'django.contrib.messages.context_processors.messages']}}]
@@ -60,13 +90,27 @@ LANGUAGE_CODE = 'en-us'; TIME_ZONE = 'UTC'; USE_I18N = True; USE_TZ = True
 STATIC_URL = 'static/'; DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework_simplejwt.authentication.JWTAuthentication', 'rest_framework.authentication.SessionAuthentication'],
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # SessionAuthentication is useful for browsing the API with Django admin login
+        'rest_framework.authentication.SessionAuthentication',
+        # dj_rest_auth can also use TokenAuthentication if preferred over JWT for some endpoints
+        # 'dj_rest_auth.jwt_auth.JWTCookieAuthentication', # If using JWT cookies
+    ),
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticatedOrReadOnly'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
     'PAGE_SIZE': 25,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 SIMPLE_JWT = {'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15), 'REFRESH_TOKEN_LIFETIME': timedelta(days=7),'ROTATE_REFRESH_TOKENS': True, 'BLACKLIST_AFTER_ROTATION': False, 'UPDATE_LAST_LOGIN': True, 'ALGORITHM': 'HS256','AUTH_HEADER_TYPES': ('Bearer',), 'USER_ID_FIELD': 'id', 'USER_ID_CLAIM': 'user_id'}
+
+# dj-rest-auth specific settings
+REST_AUTH = {
+    'USE_JWT': True, # Tell dj-rest-auth to use Simple JWT
+    'JWT_AUTH_HTTPONLY': False, # False so JavaScript can access tokens from cookies if using cookie auth
+    # 'USER_DETAILS_SERIALIZER': 'path.to.your.UserDetailsSerializer', # Optional
+    # 'REGISTER_SERIALIZER': 'path.to.your.RegisterSerializer', # Optional, if customizing registration
+}
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Conflu Clone API', 'DESCRIPTION': 'API documentation for the Conflu Clone project.',
@@ -116,16 +160,26 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_SEND_SENT_EVENT = True
-# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler' # If using django-celery-beat
+# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # Test specific settings
 if 'test' in sys.argv or 'pytest' in sys.argv:
     print("DEBUG: Applying test-specific Celery settings: CELERY_TASK_ALWAYS_EAGER=True")
     CELERY_TASK_ALWAYS_EAGER = True
-    CELERY_TASK_EAGER_PROPAGATES = True  # Makes task errors raise in the test
-    # To prevent Redis connection attempts for broker/backend during tests if not needed:
-    # CELERY_BROKER_URL = 'memory://'
-    # CELERY_RESULT_BACKEND = 'django-db' # or 'cache+memory://' or specific test backend
-    # For now, ALWAYS_EAGER should prevent most connections.
-    # If cache is also Redis, tests might still need Redis if not mocked.
-    # CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}} # Example for tests
+    CELERY_TASK_EAGER_PROPAGATES = True
+
+# Django Allauth Specific Settings (can be customized further later)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+ACCOUNT_AUTHENTICATION_METHOD = os.getenv('ACCOUNT_AUTHENTICATION_METHOD', 'username_email')
+ACCOUNT_EMAIL_REQUIRED = os.getenv('ACCOUNT_EMAIL_REQUIRED', 'True').lower() == 'true'
+ACCOUNT_EMAIL_VERIFICATION = os.getenv('ACCOUNT_EMAIL_VERIFICATION', 'optional')
+ACCOUNT_CONFIRM_EMAIL_ON_GET = os.getenv('ACCOUNT_CONFIRM_EMAIL_ON_GET', 'True').lower() == 'true'
+ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = os.getenv('ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION', 'True').lower() == 'true'
+ACCOUNT_LOGOUT_ON_GET = os.getenv('ACCOUNT_LOGOUT_ON_GET', 'False').lower() == 'true'
+ACCOUNT_LOGIN_ATTEMPTS_LIMIT = int(os.getenv('ACCOUNT_LOGIN_ATTEMPTS_LIMIT', '5'))
+ACCOUNT_LOGIN_ATTEMPTS_TIMEOUT = int(os.getenv('ACCOUNT_LOGIN_ATTEMPTS_TIMEOUT', '300'))
+LOGIN_REDIRECT_URL = os.getenv('LOGIN_REDIRECT_URL', "/")
+ACCOUNT_LOGOUT_REDIRECT_URL = os.getenv('ACCOUNT_LOGOUT_REDIRECT_URL', "/")
+ACCOUNT_EMAIL_SUBJECT_PREFIX = os.getenv('ACCOUNT_EMAIL_SUBJECT_PREFIX', '[Conflu] ')
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+# Add other email settings if using a real email backend (SMTP_HOST, etc.)
