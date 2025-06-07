@@ -36,6 +36,7 @@ router.register(r'activities', ActivityViewSet, basename='activity')
 # /auth/registration/account-confirm-email/[key]/
 
 urlpatterns = [
+    path('io/import/', include('importer.urls')),
     path('', include(router.urls)), # Includes all registered ViewSets
     path('auth/', include('dj_rest_auth.urls')),
     path('auth/registration/', include('dj_rest_auth.registration.urls')),
