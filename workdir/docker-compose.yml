@@ -1,29 +1,81 @@
 version: '3.8'
+
 services:
   db:
     image: postgres:15
-    volumes: [- postgres_data:/var/lib/postgresql/data/]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
     environment:
+      # These are used by the postgres image startup script
       - POSTGRES_DB=${POSTGRES_DB:-conflu_db}
       - POSTGRES_USER=${POSTGRES_USER:-conflu_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-conflu_password}
-    ports: ["5432:5432"]
+    ports:
+      - "5432:5432"
+
   redis:
     image: redis:7-alpine
-    volumes: [- redis_data:/data]
-    ports: ["6379:6379"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+
   backend:
     build: .
+    # manage.py is at /app/manage.py in the container
+    # project config is at /app/conflu_project_root_config/
     command: python manage.py runserver 0.0.0.0:8000
-    volumes: [- .:/app]
-    ports: ["8000:8000"]
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
     environment:
+      # These are read by settings.py
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DJANGO_DEBUG=${DJANGO_DEBUG}
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
-    depends_on: [- db, - redis]
+      - CC_SENTRY_DSN=${CC_SENTRY_DSN:-}
+      - APP_RELEASE_VERSION=${APP_RELEASE_VERSION:-conflu@0.1.0-dev-backend}
+      - CC_ENVIRONMENT_NAME=${CC_ENVIRONMENT_NAME:-development}
+    depends_on:
+      - db
+      - redis
+
+  celeryworker:
+    build: . # Uses the same Dockerfile as the backend
+    # Celery app is conflu_project_root_config (from celery.py)
+    command: celery -A conflu_project_root_config worker -l info
+    volumes:
+      - .:/app # Mount current directory to /app in container for code changes
+    environment:
+      - DJANGO_SETTINGS_MODULE=conflu_project_root_config.settings
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY} # Celery workers might need access to Django settings
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL} # For Celery broker and results backend
+      - CC_SENTRY_DSN=${CC_SENTRY_DSN:-}
+      - APP_RELEASE_VERSION=${APP_RELEASE_VERSION:-conflu@0.1.0-dev-celery}
+      - CC_ENVIRONMENT_NAME=${CC_ENVIRONMENT_NAME:-development}
+    depends_on:
+      - redis
+      - db # Tasks might interact with the database
+
+  flower:
+    image: mher/flower:2.0.1 # Aligning with installed flower version
+    command: flower --broker=${REDIS_URL:-redis://redis:6379/0} --basic_auth=${FLOWER_USER:-user}:${FLOWER_PASSWORD:-pass}
+    ports:
+      - "5555:5555"
+    environment:
+      # REDIS_URL for broker connection by Flower
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      # Basic auth credentials for Flower UI
+      - FLOWER_USER=${FLOWER_USER:-user}
+      - FLOWER_PASSWORD=${FLOWER_PASSWORD:-pass}
+    depends_on:
+      - redis
+      - celeryworker # Optional: ensure worker starts before flower, though flower can connect to broker independently
+
 volumes:
   postgres_data:
   redis_data:
