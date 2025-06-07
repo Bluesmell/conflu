@@ -26,18 +26,18 @@ ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_ENV.split(',') if host.s
 INSTALLED_APPS = [
     'django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes',
     'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles',
-    'rest_framework', 'rest_framework_simplejwt',
-    'guardian', # django-guardian
+    'rest_framework', 'rest_framework_simplejwt', 'guardian',
     'drf_spectacular', 'drf_spectacular_sidecar',
     'storages',
     'core.apps.CoreConfig', 'users.apps.UsersConfig', 'workspaces.apps.WorkspacesConfig',
     'pages.apps.PagesConfig', 'attachments.apps.AttachmentsConfig', 'importer.apps.ImporterConfig',
     'llm_integrations.apps.LlmIntegrationsConfig', 'api.apps.ApiConfig',
+    # 'django_celery_beat', # For scheduled tasks, if used later
 ]
 
 AUTHENTICATION_BACKENDS = (
-    'django.contrib.auth.backends.ModelBackend', # Default
-    'guardian.backends.ObjectPermissionBackend', # django-guardian
+    'django.contrib.auth.backends.ModelBackend',
+    'guardian.backends.ObjectPermissionBackend',
 )
 
 MIDDLEWARE = [
@@ -85,7 +85,6 @@ else:
 
 CC_STORAGE_BACKEND = os.getenv('CC_STORAGE_BACKEND', 'local').lower()
 MEDIA_URL = '/media/'
-
 if CC_STORAGE_BACKEND == 's3':
     AWS_ACCESS_KEY_ID = os.getenv('CC_AWS_ACCESS_KEY_ID')
     AWS_SECRET_ACCESS_KEY = os.getenv('CC_AWS_SECRET_ACCESS_KEY')
@@ -94,15 +93,25 @@ if CC_STORAGE_BACKEND == 's3':
     AWS_S3_REGION_NAME = os.getenv('CC_AWS_S3_REGION_NAME')
     AWS_S3_USE_SSL = os.getenv('CC_AWS_S3_USE_SSL', 'True').lower() == 'true'
     AWS_S3_VERIFY = os.getenv('CC_AWS_S3_VERIFY', 'True').lower() == 'true'
-    AWS_S3_FILE_OVERWRITE = False
-    AWS_DEFAULT_ACL = None
+    AWS_S3_FILE_OVERWRITE = False; AWS_DEFAULT_ACL = None
     if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_STORAGE_BUCKET_NAME:
         DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
     else:
         DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
         MEDIA_ROOT = PROJECT_ROOT_DIR / 'mediafiles_data_fallback'
         os.makedirs(MEDIA_ROOT, exist_ok=True)
-else: # local storage
+else:
     DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
     MEDIA_ROOT = PROJECT_ROOT_DIR / 'mediafiles_data'
     os.makedirs(MEDIA_ROOT, exist_ok=True)
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', 'redis://redis:6379/1')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_SEND_SENT_EVENT = True
+# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler' # If using django-celery-beat
