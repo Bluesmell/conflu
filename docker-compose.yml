@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./conflu_server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./conflu_server:/app
+    environment:
+      - DJANGO_SECRET_KEY=your_django_secret_key_here # Change this in production!
+      - DATABASE_URL=postgres://postgres:postgrespassword@db:5432/conflu_db
+      - REDIS_URL=redis://redis:6379/0
+      - DJANGO_DEBUG=True
+    depends_on:
+      - db
+      - redis
+    command: python manage.py runserver 0.0.0.0:8000
+
+  frontend:
+    build:
+      context: ./conflu_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./conflu_frontend:/app
+      # Ensure node_modules is not overwritten by the volume mount
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      # Ensures Vite HMR works correctly
+      - VITE_SERVER_HOST=0.0.0.0
+    command: npm run dev -- --host
+
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=conflu_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgrespassword # Change this in production!
+    ports:
+      # Optionally expose PostgreSQL port to host for direct access (e.g., for debugging)
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    volumes:
+      - redis_data:/data
+    ports:
+      # Optionally expose Redis port to host for direct access
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+  redis_data:
