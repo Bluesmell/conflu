@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'core.apps.CoreConfig', 'users.apps.UsersConfig', 'workspaces.apps.WorkspacesConfig',
     'pages.apps.PagesConfig', 'attachments.apps.AttachmentsConfig', 'importer.apps.ImporterConfig',
     'llm_integrations.apps.LlmIntegrationsConfig', 'api.apps.ApiConfig',
+    'user_notifications.apps.UserNotificationsConfig',
     # 'django_celery_beat', # For scheduled tasks, if used later
 ]
 

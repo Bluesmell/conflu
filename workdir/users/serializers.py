@@ -34,3 +34,13 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             user.last_name = validated_data.get('last_name')
         user.save()
         return user
+
+class UserSimpleSerializer(serializers.ModelSerializer):
+    """
+    Basic serializer for User model to represent users in a simple, non-sensitive way.
+    Used for actor, recipient, etc. fields in other serializers.
+    """
+    class Meta:
+        model = User  # Assumes User is already imported from django.contrib.auth.models
+        fields = ['id', 'username', 'first_name', 'last_name', 'email'] # Added email as it was in UserRegistrationSerializer fields
+        read_only_fields = fields # Typically, simple serializers are read-only representations
