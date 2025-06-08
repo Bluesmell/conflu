@@ -4,7 +4,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
-# from .models import ConfluenceUpload # To be created later
+from .models import ConfluenceUpload # Updated import
+from .serializers import ConfluenceUploadSerializer # New import
 from .tasks import import_confluence_space
 
 class ConfluenceImportView(APIView):
@@ -12,20 +13,31 @@ class ConfluenceImportView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, *args, **kwargs):
-        print(f"ConfluenceImportView: Received POST request from user: {request.user.id}")
+        serializer = ConfluenceUploadSerializer(data=request.data)
 
-        placeholder_uploaded_file_id = request.data.get('uploaded_file_id', 1)
-        user_id_to_pass = request.user.id
+        if serializer.is_valid():
+            # Save the user associated with the upload
+            confluence_upload = serializer.save(user=request.user)
 
-        try:
-            import_confluence_space.delay(
-                uploaded_file_id=placeholder_uploaded_file_id,
-                user_id=user_id_to_pass,
-                dummy_zip_path_for_testing="dummy_confluence_export_for_task.zip"
-            )
-            message = f"Confluence space import initiated for placeholder file ID: {placeholder_uploaded_file_id}."
-            print(f"ConfluenceImportView: Dispatched task for user {user_id_to_pass}, placeholder_id {placeholder_uploaded_file_id}")
-            return Response({"message": message}, status=status.HTTP_202_ACCEPTED)
-        except Exception as e:
-            print(f"ConfluenceImportView: Error dispatching Celery task: {e}")
-            return Response({"error": "Failed to initiate import process."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            print(f"ConfluenceImportView: File uploaded. Record ID: {confluence_upload.id}, User: {request.user.username if request.user else 'Unknown'}")
+
+            try:
+                # Call Celery task with the ID of the ConfluenceUpload record
+                import_confluence_space.delay(confluence_upload_id=confluence_upload.id)
+
+                # Serialize the created object to return in the response
+                response_data_serializer = ConfluenceUploadSerializer(confluence_upload)
+
+                return Response({
+                    "message": f"Confluence space import initiated for upload ID: {confluence_upload.id}.",
+                    "data": response_data_serializer.data
+                }, status=status.HTTP_202_ACCEPTED)
+            except Exception as e:
+                # If task dispatch fails, mark the upload as FAILED
+                confluence_upload.status = ConfluenceUpload.STATUS_FAILED
+                confluence_upload.save()
+                print(f"ConfluenceImportView: Critical error dispatching Celery task for upload {confluence_upload.id}: {e}")
+                return Response({"error": f"Failed to initiate import process after upload: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            print(f"ConfluenceImportView: Invalid data for file upload. User: {request.user.username if request.user else 'Unknown'}. Errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

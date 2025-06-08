@@ -14,6 +14,11 @@ from rest_framework.test import APIClient
 from rest_framework import status
 from unittest.mock import patch
 
+# Imports for updated tests and new model tests
+from django.core.files.uploadedfile import SimpleUploadedFile
+from .models import ConfluenceUpload
+
+
 class ImporterUtilsTests(TestCase):
     def setUp(self):
         # Create a unique base directory for all test files for this test class run
@@ -121,18 +126,90 @@ class ConfluenceImportViewTests(TestCase):
         self.user = User.objects.create_user(username='testuser_importer_view', password='password')
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
-        self.import_url = "/api/v1/io/import/confluence/" # Based on README and observed URL structure
+        self.import_url = "/api/v1/io/import/confluence/"
 
-    @patch('workdir.importer.views.import_confluence_space.delay') # Corrected path to views
+    @patch('workdir.importer.views.import_confluence_space.delay')
     def test_post_request_triggers_import_task(self, mock_import_task_delay):
-        payload = {'uploaded_file_id': 'dummy-test-id-123'}
-        response = self.client.post(self.import_url, data=payload) # POST request
+        # Create a dummy ZIP file for upload
+        dummy_file_content = b"This is a dummy zip file content."
+        dummy_file = SimpleUploadedFile(
+            "test_confluence_export.zip",
+            dummy_file_content,
+            content_type="application/zip"
+        )
+        payload = {'file': dummy_file}
 
-        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        response = self.client.post(self.import_url, data=payload, format='multipart')
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED, response.data)
+
+        # Check that a ConfluenceUpload record was created
+        self.assertEqual(ConfluenceUpload.objects.count(), 1)
+        created_upload_record = ConfluenceUpload.objects.first()
+        self.assertIsNotNone(created_upload_record)
+        self.assertEqual(created_upload_record.user, self.user)
+        self.assertTrue(created_upload_record.file.name.endswith(".zip")) # Check if file field is populated
+        self.assertEqual(created_upload_record.status, ConfluenceUpload.STATUS_PENDING) # Initial status
+
+        # Check that the Celery task was called once with the correct ID
         mock_import_task_delay.assert_called_once()
-
-        # Verify the arguments passed to the mocked task
         args, kwargs = mock_import_task_delay.call_args
-        self.assertEqual(kwargs.get('uploaded_file_id'), 'dummy-test-id-123')
-        self.assertEqual(kwargs.get('user_id'), self.user.id)
-        self.assertEqual(kwargs.get('dummy_zip_path_for_testing'), "dummy_confluence_export_for_task.zip")
+        self.assertEqual(kwargs.get('confluence_upload_id'), created_upload_record.id)
+
+        # Check response data
+        self.assertIn('data', response.data)
+        self.assertEqual(response.data['data']['id'], created_upload_record.id)
+        self.assertEqual(response.data['data']['status'], ConfluenceUpload.STATUS_PENDING)
+
+        # Clean up the uploaded file from storage after test
+        if created_upload_record and created_upload_record.file:
+            created_upload_record.file.delete(save=False)
+
+
+class ConfluenceUploadModelTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='testmodeluser', password='password')
+        self.dummy_file = SimpleUploadedFile(
+            "model_test.zip",
+            b"dummy content for model test",
+            "application/zip"
+        )
+
+    def tearDown(self):
+        # Clean up any files created by ConfluenceUpload instances
+        uploads = ConfluenceUpload.objects.all()
+        for upload in uploads:
+            if upload.file:
+                upload.file.delete(save=False)
+
+    def test_confluence_upload_creation(self):
+        upload = ConfluenceUpload.objects.create(user=self.user, file=self.dummy_file)
+        self.assertEqual(upload.user, self.user)
+        # File name might be prefixed with upload_to path, so check endswith
+        self.assertTrue(upload.file.name.endswith("model_test.zip"))
+        self.assertEqual(upload.status, ConfluenceUpload.STATUS_PENDING)
+        self.assertIsNotNone(upload.uploaded_at)
+        self.assertIsNone(upload.task_id) # Initially null
+
+    def test_confluence_upload_str_method(self):
+        upload = ConfluenceUpload.objects.create(user=self.user, file=self.dummy_file)
+        # Based on the model's __str__ method:
+        # f"Import ID {self.pk or 'Unsaved'} ({file_name}) by {username} - Status: {self.get_status_display()}"
+        expected_filename = os.path.basename(upload.file.name) # Model uses os.path.basename
+        expected_str = f"Import ID {upload.pk} ({expected_filename}) by {self.user.username} - Status: Pending"
+        self.assertEqual(str(upload), expected_str)
+
+    def test_confluence_upload_status_choices(self):
+        upload = ConfluenceUpload.objects.create(user=self.user, file=self.dummy_file)
+
+        upload.status = ConfluenceUpload.STATUS_PROCESSING
+        upload.save()
+        self.assertEqual(upload.get_status_display(), "Processing")
+
+        upload.status = ConfluenceUpload.STATUS_COMPLETED
+        upload.save()
+        self.assertEqual(upload.get_status_display(), "Completed")
+
+        upload.status = ConfluenceUpload.STATUS_FAILED
+        upload.save()
+        self.assertEqual(upload.get_status_display(), "Failed")
