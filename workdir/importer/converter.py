@@ -138,15 +138,36 @@ def process_node(node, current_marks=None, parent_pm_type=None):
             if node.has_attr('class'):
                 for cn in node['class']:
                     if cn.startswith('language-'): lang = cn.replace('language-', '', 1); break
-                    if cn.startswith('lang-'): lang = cn.replace('lang-', '', 1); break
-                    if cn.startswith('brush:'):
-                        # Regex to capture language like 'java' from "brush: java; gutter: false"
-                        # It looks for "brush:", optional space, captures language, then optionally semicolon/space and rest
-                        m = re.search(r'brush:\s*([\w+-]+)(?:[;\s].*)?$', cn)
-                        if m: lang = m.group(1); break
+                    if cn.startswith('language-'):
+                        lang = cn.replace('language-', '', 1)
+                        if lang: break
+            if node.has_attr('class'):
+                class_list = node['class'] # Get the list of classes
+
+                # First, check for standard 'language-xxx' or 'lang-xxx'
+                for cn in class_list:
+                    if cn.startswith('language-'):
+                        lang = cn.replace('language-', '', 1)
+                        break # Found language, exit loop
+                    if cn.startswith('lang-'):
+                        lang = cn.replace('lang-', '', 1)
+                        break # Found language, exit loop
+
+                # If not found, check for Confluence 'brush: language;' style
+                if not lang and 'brush:' in class_list:
+                    try:
+                        brush_idx = class_list.index('brush:')
+                        if brush_idx + 1 < len(class_list):
+                            potential_lang = class_list[brush_idx+1]
+                            # Clean up common delimiters like trailing semicolon
+                            lang = potential_lang.rstrip(';')
+                    except ValueError:
+                        # This case should not be reached if 'brush:' is in class_list
+                        pass
+
             if lang: attrs['language'] = lang.lower()
             pm_node = {"type": "code_block", "content": pm_node_content}
-            if attrs: pm_node['attrs'] = attrs
+            if attrs: pm_node['attrs'] = attrs # This line adds the attributes if found
             return [pm_node]
 
         new_marks = current_marks[:]

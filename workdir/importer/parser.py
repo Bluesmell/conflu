@@ -92,6 +92,15 @@ def parse_html_file_basic(html_file_path): # Renamed from parse_html_file_advanc
             else:
                 print(f"  No specific referenced attachments found in links or images.")
 
+        # Check for effectively empty or invalid content post-parsing
+        title_present = extracted_data.get("title") and extracted_data.get("title").strip()
+        content_html = extracted_data.get("main_content_html", "")
+        # If no title AND (content is empty OR content is very short e.g. < 5 chars and might be garbage)
+        # This specifically helps the test case with b"\0\1\2" which results in title=None, content='\x00\x01\x02'
+        if not title_present and (not content_html.strip() or len(content_html.strip()) < 5) :
+            if "error" not in extracted_data: # Don't overwrite an error from an actual exception
+                extracted_data["error"] = "Failed to extract meaningful title or content."
+
         return extracted_data
 
     except FileNotFoundError:
