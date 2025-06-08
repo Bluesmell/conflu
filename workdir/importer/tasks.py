@@ -26,6 +26,35 @@ except ImportError:
 
 User = get_user_model()
 
+# Helper function for resolving image srcs in ProseMirror content
+def _resolve_symbolic_image_srcs(node_list, attachments_by_filename):
+    """
+    Recursively traverses a list of ProseMirror nodes (like a 'content' array),
+    finds image nodes with symbolic 'pm:attachment:' src, and replaces them
+    with actual attachment URLs.
+    Modifies node_list in-place.
+    """
+    if not isinstance(node_list, list):
+        return
+
+    for node in node_list:
+        if not isinstance(node, dict):
+            continue
+
+        if node.get("type") == "image":
+            attrs = node.get("attrs", {})
+            src = attrs.get("src", "")
+            if src.startswith("pm:attachment:"):
+                filename = src.replace("pm:attachment:", "", 1)
+                if filename in attachments_by_filename:
+                    attrs["src"] = attachments_by_filename[filename]
+                    # print(f"    Resolved image src for '{filename}' to '{attrs['src']}'")
+                else:
+                    print(f"    WARNING: Image attachment '{filename}' referenced in content but not found for page. Symbolic src will remain.")
+
+        if "content" in node and isinstance(node["content"], list):
+            _resolve_symbolic_image_srcs(node["content"], attachments_by_filename)
+
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=300)
 def import_confluence_space(self, confluence_upload_id):
@@ -220,9 +249,23 @@ def import_confluence_space(self, confluence_upload_id):
                 if attachments_created_count_for_page > 0:
                      print(f"    Successfully processed {attachments_created_count_for_page} attachments for page '{created_page_object.title}'.")
 
-            except Exception as page_create_error: # This except handles errors from Page.objects.create or attachment processing for that page
+                # --- Post-process Page Content for Image Src Resolution ---
+                if created_page_object.content_json and 'content' in created_page_object.content_json:
+                    page_attachments = Attachment.objects.filter(page=created_page_object)
+                    attachments_by_filename_map = {
+                        att.original_filename: att.file.url
+                        for att in page_attachments if att.file and hasattr(att.file, 'url') # Ensure file exists and has URL
+                    }
+
+                    if attachments_by_filename_map:
+                        print(f"    Resolving symbolic image srcs for page '{created_page_object.title}'...")
+                        _resolve_symbolic_image_srcs(created_page_object.content_json['content'], attachments_by_filename_map)
+                        created_page_object.save(update_fields=['content_json', 'updated_at'])
+                        print(f"    Finished resolving image srcs. Page content_json updated.")
+
+            except Exception as page_create_error: # This except handles errors from Page.objects.create or attachment/image processing for that page
                 pages_failed_count += 1
-                print(f"[Importer Task] ID {self.request.id} | ERROR processing page '{page_title}' or its attachments: {page_create_error}")
+                print(f"[Importer Task] ID {self.request.id} | ERROR processing page '{page_title}' or its attachments/images: {page_create_error}")
 
         # --- Pass 2: Link page hierarchy ---
         if page_hierarchy_from_metadata and original_id_to_new_pk_map:
