@@ -13,7 +13,10 @@ class FallbackMacro(models.Model):
     import_notes = models.TextField(blank=True, null=True)
     placeholder_id_in_content = models.UUIDField(null=True, blank=True, default=uuid.uuid4)
     def __str__(self): return f"Fallback for {self.macro_name}" # Simplified __str__
-    class Meta: verbose_name = "Fallback Macro"; verbose_name_plural = "Fallback Macros"
+    class Meta:
+        verbose_name = "Fallback Macro"
+        verbose_name_plural = "Fallback Macros"
+        app_label = 'importer'
 
 class ConfluenceUpload(models.Model):
     STATUS_PENDING = 'PENDING'
@@ -60,6 +63,7 @@ class ConfluenceUpload(models.Model):
         ordering = ['-uploaded_at']
         verbose_name = "Confluence Upload"
         verbose_name_plural = "Confluence Uploads"
+        app_label = 'importer'
 
     def __str__(self):
         username = self.user.get_username() if self.user else 'Anonymous'
