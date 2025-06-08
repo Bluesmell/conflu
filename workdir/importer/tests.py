@@ -213,3 +213,503 @@ class ConfluenceUploadModelTests(TestCase):
         upload.status = ConfluenceUpload.STATUS_FAILED
         upload.save()
         self.assertEqual(upload.get_status_display(), "Failed")
+
+
+class EnhancedHtmlParserTests(TestCase):
+    def setUp(self):
+        # Create a temporary directory to store dummy HTML files for tests
+        self.temp_dir = tempfile.mkdtemp(prefix="parser_tests_enhanced_") # Changed prefix for clarity
+
+    def tearDown(self):
+        # Remove the temporary directory and its contents after tests
+        shutil.rmtree(self.temp_dir)
+
+    def _create_dummy_html_file(self, filename, content):
+        """Helper to create a temporary HTML file with given content."""
+        file_path = os.path.join(self.temp_dir, filename)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return file_path
+
+    def test_parse_simple_page_with_main_content_div(self):
+        html_content = """
+        <html><head><title>Simple Page</title></head>
+        <body>
+            <div id="main-content">
+                <h1>Main Heading</h1><p>Some text. <img src="../attachments/image.png"></p>
+                <a href="attachments/doc.pdf">Document</a>
+            </div>
+            <div id="footer">Footer stuff</div>
+        </body></html>
+        """
+        file_path = self._create_dummy_html_file("simple.html", html_content)
+        result = parse_html_file_basic(file_path) # parse_html_file_basic is the enhanced one now
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("title"), "Simple Page")
+        # More robust checks for main_content_html
+        main_html = result.get("main_content_html", "")
+        self.assertIn("<h1>Main Heading</h1>", main_html)
+        self.assertTrue("<img src=\"../attachments/image.png\"/>" in main_html or "<img src=\"../attachments/image.png\">" in main_html)
+        self.assertIn("<a href=\"attachments/doc.pdf\">Document</a>", main_html)
+        self.assertNotIn("Footer stuff", main_html)
+        self.assertEqual(sorted(result.get("referenced_attachments", [])), sorted(["doc.pdf", "image.png"]))
+
+
+    def test_parse_with_wiki_content_class(self):
+        html_content = """
+        <html><head><title>Wiki Page</title></head>
+        <body>
+            <div class="wiki-content">
+                <p>Content here. <img src="image2.jpg"></p>
+            </div>
+        </body></html>
+        """
+        file_path = self._create_dummy_html_file("wiki.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertEqual(result.get("title"), "Wiki Page")
+        main_html = result.get("main_content_html", "")
+        self.assertTrue("<img src=\"image2.jpg\"/>" in main_html or "<img src=\"image2.jpg\">" in main_html)
+        self.assertIn("<p>Content here. ", main_html)
+        self.assertEqual(result.get("referenced_attachments"), ["image2.jpg"])
+
+    def test_parse_fallback_to_body_if_no_main_div(self):
+        html_content = """
+        <html><head><title>Body Fallback</title></head>
+        <body>
+            <h1>Only Body Content</h1>
+            <p>An attachment: <a href="files/report.docx">Report</a></p>
+        </body></html>
+        """
+        file_path = self._create_dummy_html_file("body_fallback.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertEqual(result.get("title"), "Body Fallback")
+        main_html = result.get("main_content_html", "")
+        self.assertIn("<h1>Only Body Content</h1>", main_html)
+        self.assertIn("<a href=\"files/report.docx\">Report</a>", main_html)
+        self.assertEqual(result.get("referenced_attachments"), ["report.docx"])
+
+    def test_attachment_extraction_various_paths_and_encoded(self):
+        html_content = """
+        <html><head><title>Attachments Test</title></head>
+        <body><div id="main-content">
+            <img src="simple.gif"/>
+            <img src="../attachments/complex name with spaces.png"/>
+            <a href="attachments/My%20Document.pdf">My PDF</a>
+            <a href="externalhttp://example.com/doc.txt">External</a>
+            <a href="#anchor">Anchor link</a>
+            <img src="data:image/png;base64,..." />
+        </div></body></html>
+        """
+        file_path = self._create_dummy_html_file("attachments.html", html_content)
+        result = parse_html_file_basic(file_path)
+        expected_attachments = sorted(["My Document.pdf", "complex name with spaces.png", "simple.gif"])
+        self.assertEqual(sorted(result.get("referenced_attachments", [])), expected_attachments)
+
+    def test_no_attachments(self):
+        html_content = """
+        <html><head><title>No Attachments</title></head>
+        <body><div id="main-content"><p>Just text.</p></div></body></html>
+        """
+        file_path = self._create_dummy_html_file("no_attachments.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertEqual(result.get("referenced_attachments", []), [])
+
+    def test_title_fallback_to_h1(self):
+        html_content = """
+        <html><head></head><body>
+        <div id="main-content"><h1>Actual Page Title</h1><p>Text.</p></div>
+        </body></html>
+        """
+        file_path = self._create_dummy_html_file("h1_title.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertEqual(result.get("title"), "Actual Page Title")
+
+    def test_file_not_found(self):
+        result = parse_html_file_basic(os.path.join(self.temp_dir, "nonexistent.html"))
+        self.assertIsNone(result)
+
+    def test_parsing_error_returns_partial_data_with_error_key(self):
+        # Test with a file that's not HTML (e.g. binary), which might cause issues.
+        binary_content = b"\x00\x01\x02\x03\x04\xff\xfe\xfd"
+        file_path_bin = self._create_dummy_html_file("binary_file.html", binary_content.decode('latin-1', errors='ignore'))
+        result_bin = parse_html_file_basic(file_path_bin)
+
+        self.assertIsNotNone(result_bin)
+        self.assertIn("error", result_bin)
+        # Title might be None or some default depending on how BS4 handles very broken content for title tag.
+        # For a binary file, it's likely title extraction also fails or yields empty/None.
+        self.assertIsNone(result_bin.get("title")) # Expect title to be None if parsing fails very early
+        self.assertIsNone(result_bin.get("main_content_html"))
+        self.assertEqual(result_bin.get("referenced_attachments", []), [])
+
+
+from .converter import convert_html_to_prosemirror_json # Function to test
+
+class HtmlConverterTests(TestCase):
+    def test_empty_and_none_html(self):
+        self.assertEqual(convert_html_to_prosemirror_json(""), {"type": "doc", "content": []})
+        self.assertEqual(convert_html_to_prosemirror_json(None), {"type": "doc", "content": []})
+
+    def test_simple_paragraph(self):
+        html = "<p>Hello world.</p>"
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "Hello world."}]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+
+# Imports for ConfluenceImportTaskTests (some might be duplicates from top, ensure organized)
+# zipfile, tempfile, shutil, os are already imported at the top or by other test classes.
+# User, SimpleUploadedFile, ConfluenceUpload are also imported above.
+# Page, Attachment from pages.models (Attachment already imported by HtmlConverterTests, Page not yet explicitly for other tests)
+from django.conf import settings as django_settings # Renamed to avoid conflict if 'settings' is used as var
+from django.test import override_settings
+# from django.core.files.base import ContentFile # Not used in final version of task tests
+from .tasks import import_confluence_space # The Celery task
+from pages.models import Page, Attachment # Page needs to be imported here if not already
+try:
+    from workspaces.models import Workspace, Space
+except ImportError:
+    Workspace = None
+    Space = None
+
+
+@override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+class ConfluenceImportTaskTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(username='task_testuser', password='password123')
+
+        if Workspace:
+            cls.workspace = Workspace.objects.create(name='Task Test Workspace', owner=cls.user)
+            if Space:
+                # Assuming Space model has 'created_by' or similar if user is passed.
+                # Based on pages/models.py, Space is just 'name' and 'workspace'.
+                cls.space = Space.objects.create(name='Task Test Space', workspace=cls.workspace)
+            else:
+                cls.space = None
+        else:
+            cls.workspace = None
+            cls.space = None
+
+        if not cls.workspace or not cls.space:
+            print("ConfluenceImportTaskTests: Workspace/Space models not available or setup failed. Some tests will be skipped.")
+
+    def setUp(self):
+        self.temp_media_dir_obj = tempfile.TemporaryDirectory(prefix="test_media_")
+        self.temp_media_dir_path = self.temp_media_dir_obj.name
+
+        self.original_media_root = django_settings.MEDIA_ROOT
+        django_settings.MEDIA_ROOT = self.temp_media_dir_path
+
+        self.zip_temp_dir_obj = tempfile.TemporaryDirectory(prefix="zip_creation_")
+        self.zip_temp_dir_path = self.zip_temp_dir_obj.name
+
+    def tearDown(self):
+        django_settings.MEDIA_ROOT = self.original_media_root
+        self.temp_media_dir_obj.cleanup()
+        self.zip_temp_dir_obj.cleanup()
+
+    def _create_dummy_confluence_zip(self, zip_filename, html_files_data=None, attachment_files_data=None, create_attachments_subfolder=False):
+        html_files_data = html_files_data or {}
+        attachment_files_data = attachment_files_data or {}
+
+        zip_file_path = os.path.join(self.zip_temp_dir_path, zip_filename)
+
+        current_zip_content_dir = tempfile.mkdtemp(dir=self.zip_temp_dir_path)
+
+        for name, content in html_files_data.items():
+            file_path = os.path.join(current_zip_content_dir, name)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        attachments_root_in_zip = current_zip_content_dir
+        if create_attachments_subfolder:
+            attachments_root_in_zip = os.path.join(current_zip_content_dir, "attachments")
+            os.makedirs(attachments_root_in_zip, exist_ok=True)
+
+        for name, content in attachment_files_data.items():
+            file_path = os.path.join(attachments_root_in_zip, name)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "wb") as f:
+                f.write(content)
+
+        with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root_dir, _, files_in_dir in os.walk(current_zip_content_dir):
+                for file_item in files_in_dir:
+                    full_path = os.path.join(root_dir, file_item)
+                    arcname = os.path.relpath(full_path, current_zip_content_dir)
+                    zf.write(full_path, arcname)
+
+        shutil.rmtree(current_zip_content_dir)
+        return zip_file_path
+
+    def test_import_task_success_simple_page_no_attachments(self):
+        if not self.workspace or not self.space:
+            self.skipTest("Workspace or Space not available for testing.")
+
+        html_data = {"page1_123.html": "<html><head><title>Test Page 1</title></head><body><div id='main-content'><p>Content of page 1</p></div></body></html>"}
+        zip_path = self._create_dummy_confluence_zip("test1.zip", html_files_data=html_data)
+
+        with open(zip_path, 'rb') as f_zip:
+            upload_file = SimpleUploadedFile(name=os.path.basename(zip_path), content=f_zip.read(), content_type='application/zip')
+
+        upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file)
+        result_message = import_confluence_space(confluence_upload_id=upload_record.id)
+
+        upload_record.refresh_from_db()
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+
+        self.assertTrue(Page.objects.filter(space=self.space, title="Test Page 1", original_confluence_id="123").exists())
+        page1 = Page.objects.get(original_confluence_id="123", space=self.space)
+        self.assertEqual(page1.imported_by, self.user)
+        self.assertIsNotNone(page1.content_json)
+        self.assertEqual(page1.content_json['type'], 'doc')
+        # Based on current converter for "<p>Content of page 1</p>"
+        expected_content = [{"type": "paragraph", "content": [{"type": "text", "text": "Content of page 1"}]}]
+        self.assertEqual(page1.content_json['content'], expected_content)
+        self.assertEqual(Attachment.objects.count(), 0)
+        self.assertIn("Pages created: 1", result_message)
+
+
+    def test_import_task_page_with_attachments(self):
+        if not self.workspace or not self.space:
+            self.skipTest("Workspace or Space not available for testing.")
+
+        html_content = "<html><head><title>Page With Attach</title></head><body><div id='main-content'><p>See <img src='../attachments/image.png'> and <a href='doc.pdf'>doc</a>.</p></div></body></html>"
+        html_data = {"pages/page_attach_789.html": html_content} # HTML in a subfolder
+
+        attachment_data_in_zip_attachments_folder = {"image.png": b"img_content_zip"}
+        attachment_data_in_zip_root = {"doc.pdf": b"pdf_content_zip"}
+
+        zip_path = self._create_dummy_confluence_zip(
+            "test_attach.zip",
+            html_files_data=html_data,
+            attachment_files_data=attachment_data_in_zip_attachments_folder,
+            create_attachments_subfolder=True # This puts image.png under 'attachments/'
+        )
+        with zipfile.ZipFile(zip_path, 'a') as zf:
+            for name, content in attachment_data_in_zip_root.items():
+                 zf.writestr(name, content) # Add doc.pdf to root
+
+        with open(zip_path, 'rb') as f_zip:
+            upload_file = SimpleUploadedFile(name=os.path.basename(zip_path), content=f_zip.read(), content_type='application/zip')
+        upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file)
+
+        result_message = import_confluence_space(confluence_upload_id=upload_record.id)
+
+        upload_record.refresh_from_db()
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED, result_message)
+        self.assertTrue(Page.objects.filter(original_confluence_id="789", space=self.space).exists())
+        page = Page.objects.get(original_confluence_id="789", space=self.space)
+
+        self.assertEqual(Attachment.objects.filter(page=page).count(), 2)
+
+        img_attach = Attachment.objects.get(page=page, original_filename="image.png")
+        pdf_attach = Attachment.objects.get(page=page, original_filename="doc.pdf")
+
+        self.assertTrue(img_attach.file.name.endswith("image.png"))
+        self.assertTrue(pdf_attach.file.name.endswith("doc.pdf"))
+        with img_attach.file.open('rb') as f:
+            self.assertEqual(f.read(), b"img_content_zip")
+        with pdf_attach.file.open('rb') as f:
+            self.assertEqual(f.read(), b"pdf_content_zip")
+        self.assertIn("Pages created: 1", result_message)
+
+    def test_import_task_no_html_files_in_zip(self):
+        zip_path = self._create_dummy_confluence_zip("no_html.zip", attachment_files_data={"text.txt": b"data"})
+        with open(zip_path, 'rb') as f_zip:
+            upload_file = SimpleUploadedFile(name=os.path.basename(zip_path), content=f_zip.read(), content_type='application/zip')
+        upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file)
+
+        import_confluence_space(confluence_upload_id=upload_record.id)
+        upload_record.refresh_from_db()
+
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_FAILED)
+        self.assertEqual(Page.objects.count(), 0)
+
+    def test_multiple_paragraphs(self):
+        html = "<p>First paragraph.</p><p>Second paragraph.</p>"
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "First paragraph."}]},
+                {"type": "paragraph", "content": [{"type": "text", "text": "Second paragraph."}]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+    def test_headings(self):
+        html = "<h1>H1</h1><h2>H2</h2><h3>H3</h3>"
+        # Current converter wraps top-level text/headings in paragraphs if they are not already.
+        # The current converter's final loop: if item.get("type") == "text": final_doc_content.append({"type": "paragraph", "content": [item]})
+        # This applies to text, but headings are block items. Let's check converter logic for blocks.
+        # map_tag_to_prosemirror_type returns 'heading' for h1.
+        # process_node for 'heading' returns `[pm_node]`. So it's a block.
+        # The final loop's `else: final_doc_content.append(item)` should apply.
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "heading", "attrs": {"level": 1}, "content": [{"type": "text", "text": "H1"}]},
+                {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "H2"}]},
+                {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "H3"}]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+    def test_bold_and_italic_marks(self):
+        html = "<p>This is <strong>bold</strong> and <em>italic</em>.</p>"
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [
+                    {"type": "text", "text": "This is "},
+                    {"type": "text", "marks": [{"type": "bold"}], "text": "bold"},
+                    {"type": "text", "text": " and "},
+                    {"type": "text", "marks": [{"type": "italic"}], "text": "italic"},
+                    {"type": "text", "text": "."}
+                ]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+    def test_nested_marks_bold_italic(self):
+        html = "<p><strong><em>Bold and Italic</em></strong></p>"
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [
+                    # Order of marks can matter for strict equality, but logically equivalent.
+                    # The converter's current mark accumulation logic should result in a list.
+                    {"type": "text", "marks": [{"type": "bold"}, {"type": "italic"}], "text": "Bold and Italic"}
+                ]}
+            ]
+        }
+        # To make this test more robust if mark order is not guaranteed:
+        result = convert_html_to_prosemirror_json(html)
+        self.assertEqual(result['type'], 'doc')
+        self.assertEqual(len(result['content']), 1)
+        paragraph_content = result['content'][0].get('content', [])
+        self.assertEqual(len(paragraph_content), 1)
+        text_node = paragraph_content[0]
+        self.assertEqual(text_node.get('type'), 'text')
+        self.assertEqual(text_node.get('text'), 'Bold and Italic')
+        self.assertIn({"type": "bold"}, text_node.get('marks', []))
+        self.assertIn({"type": "italic"}, text_node.get('marks', []))
+        self.assertEqual(len(text_node.get('marks', [])), 2)
+
+
+    def test_link_mark(self):
+        html = '<p>Visit our <a href="http://example.com">website</a>.</p>'
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [
+                    {"type": "text", "text": "Visit our "},
+                    {"type": "text", "marks": [{"type": "link", "attrs": {"href": "http://example.com"}}], "text": "website"},
+                    {"type": "text", "text": "."}
+                ]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+    def test_hard_break(self):
+        html = "<p>Line one<br>Line two</p>"
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [
+                    {"type": "text", "text": "Line one"},
+                    {"type": "hard_break"},
+                    {"type": "text", "text": "Line two"}
+                ]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+    def test_unordered_list(self):
+        html = "<ul><li>Item 1</li><li>Item 2</li></ul>"
+        # Current converter: list_item content is directly text nodes if not wrapped in <p>
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "bullet_list", "content": [
+                    {"type": "list_item", "content": [{"type": "text", "text": "Item 1"}]},
+                    {"type": "list_item", "content": [{"type": "text", "text": "Item 2"}]}
+                ]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+    def test_ordered_list(self):
+        html = "<ol><li>First</li><li>Second</li></ol>"
+        # Current converter: list_item content is directly text nodes. No 'order' attr by default.
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "ordered_list", "content": [
+                    {"type": "list_item", "content": [{"type": "text", "text": "First"}]},
+                    {"type": "list_item", "content": [{"type": "text", "text": "Second"}]}
+                ]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+    def test_unmapped_tags_are_unwrapped(self):
+        html = "<div><p>Content inside a div.</p></div><span>Text in span.</span>"
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "Content inside a div."}]},
+                {"type": "paragraph", "content": [{"type": "text", "text": "Text in span."}]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+    def test_top_level_text_gets_paragraph_wrapper(self):
+        html = "Just some loose text. Followed by more."
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "Just some loose text. Followed by more."}]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+
+    def test_text_stripping_and_empty_nodes(self):
+        # The converter was updated to strip only at block boundaries or for otherwise empty paragraphs.
+        # NavigableString itself isn't stripped in process_node.
+        # The final loop for "paragraph" with only whitespace text: item["content"] = [c for c in item["content"] if c.get("type") != "text" or c.get("text").strip() != ""]
+        # if not item["content"]: continue
+        html_p_spaces = "<p>   Spaces   </p>"
+        expected_p_spaces = {
+            "type": "doc", "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "   Spaces   "}]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html_p_spaces), expected_p_spaces)
+
+        html_empty_p = "<p></p>" # This paragraph will be empty, and might be skipped by the final filter
+        self.assertEqual(convert_html_to_prosemirror_json(html_empty_p), {"type": "doc", "content": []})
+
+        html_p_only_spaces = "<p>  </p>" # This paragraph content becomes empty text node, then paragraph is skipped
+        self.assertEqual(convert_html_to_prosemirror_json(html_p_only_spaces), {"type": "doc", "content": []})
+
+    def test_list_item_with_paragraph(self):
+        html = "<ul><li><p>Item 1 in para</p></li></ul>"
+        expected_json = {
+            "type": "doc",
+            "content": [
+                {"type": "bullet_list", "content": [
+                    {"type": "list_item", "content": [
+                        {"type": "paragraph", "content": [{"type": "text", "text": "Item 1 in para"}]}
+                    ]}
+                ]}
+            ]
+        }
+        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
