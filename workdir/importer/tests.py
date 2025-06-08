@@ -8,6 +8,12 @@ import textwrap # Keep for dummy HTML content formatting within tests
 from .utils import extract_html_and_metadata_from_zip, cleanup_temp_extraction_dir
 from .parser import parse_html_file_basic
 
+# Added imports for ConfluenceImportViewTests
+from django.contrib.auth.models import User
+from rest_framework.test import APIClient
+from rest_framework import status
+from unittest.mock import patch
+
 class ImporterUtilsTests(TestCase):
     def setUp(self):
         # Create a unique base directory for all test files for this test class run
@@ -109,3 +115,24 @@ class ImporterParserTests(TestCase):
     def test_parse_nonexistent_html_file(self):
         parsed_data = parse_html_file_basic(os.path.join(self.base_temp_dir,"nonexistent_parser_test.html"))
         self.assertIsNone(parsed_data)
+
+class ConfluenceImportViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='testuser_importer_view', password='password')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.import_url = "/api/v1/io/import/confluence/" # Based on README and observed URL structure
+
+    @patch('workdir.importer.views.import_confluence_space.delay') # Corrected path to views
+    def test_post_request_triggers_import_task(self, mock_import_task_delay):
+        payload = {'uploaded_file_id': 'dummy-test-id-123'}
+        response = self.client.post(self.import_url, data=payload) # POST request
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        mock_import_task_delay.assert_called_once()
+
+        # Verify the arguments passed to the mocked task
+        args, kwargs = mock_import_task_delay.call_args
+        self.assertEqual(kwargs.get('uploaded_file_id'), 'dummy-test-id-123')
+        self.assertEqual(kwargs.get('user_id'), self.user.id)
+        self.assertEqual(kwargs.get('dummy_zip_path_for_testing'), "dummy_confluence_export_for_task.zip")
