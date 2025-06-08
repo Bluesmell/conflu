@@ -50,9 +50,8 @@ class ImporterUtilsTests(TestCase):
                     zf.write(file_path_in_zip, arcname)
     def tearDown(self):
         shutil.rmtree(self.base_temp_dir)
-        if hasattr(self, 'extraction_target_dir') and os.path.exists(self.extraction_target_dir): # Ensure it exists before cleanup
-            cleanup_temp_extraction_dir(temp_extract_dir=self.extraction_target_dir) # Call the actual cleanup util
-        # Fallback for older temp_confluence_export name, if any test created it directly
+        if hasattr(self, 'extraction_target_dir') and os.path.exists(self.extraction_target_dir):
+            cleanup_temp_extraction_dir(temp_extract_dir=self.extraction_target_dir)
         if os.path.exists("temp_confluence_export"):
              shutil.rmtree("temp_confluence_export")
 
@@ -64,14 +63,14 @@ class ImporterUtilsTests(TestCase):
         self.assertEqual(extracted_html_names, sorted(["page1.html", "page2.htm"]))
         if metadata_file: self.assertEqual(os.path.basename(metadata_file), "entities.xml")
         self.assertTrue(os.path.exists(self.extraction_target_dir))
-        cleanup_temp_extraction_dir(temp_extract_dir=self.extraction_target_dir) # Test cleanup
+        cleanup_temp_extraction_dir(temp_extract_dir=self.extraction_target_dir)
         self.assertFalse(os.path.exists(self.extraction_target_dir))
 
     def test_extract_from_nonexistent_zip(self):
         html_files, metadata_file = extract_html_and_metadata_from_zip("nonexistent_utils.zip", temp_extract_dir=self.extraction_target_dir)
         self.assertEqual(len(html_files), 0)
         self.assertIsNone(metadata_file)
-        self.assertFalse(os.path.exists(self.extraction_target_dir)) # Should not create dir if zip doesn't exist
+        self.assertFalse(os.path.exists(self.extraction_target_dir))
 
     def test_extract_from_bad_zip(self):
         bad_zip_path = os.path.join(self.base_temp_dir, "bad_utils.zip")
@@ -79,7 +78,7 @@ class ImporterUtilsTests(TestCase):
         html_files, metadata_file = extract_html_and_metadata_from_zip(bad_zip_path, temp_extract_dir=self.extraction_target_dir)
         self.assertEqual(len(html_files), 0)
         self.assertIsNone(metadata_file)
-        self.assertFalse(os.path.exists(self.extraction_target_dir)) # Should not create dir if zip is bad
+        self.assertFalse(os.path.exists(self.extraction_target_dir))
 
 
 class ImporterParserTests(TestCase):
@@ -108,28 +107,24 @@ class ConfluenceUploadModelTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='testmodeluser', password='password')
         self.dummy_file = SimpleUploadedFile("model.zip", b"content", "application/zip")
-        if Workspace: # Create workspace and space for tests that need them
+        if Workspace:
             self.ws_for_model_test = Workspace.objects.create(name="WS for Model Test", owner=self.user)
             if Space:
                 self.space_for_model_test = Space.objects.create(name="Space for Model Test", key="SMT", workspace=self.ws_for_model_test, owner=self.user)
 
-
     def tearDown(self):
-        # Clean up files from FileField
         for upload in ConfluenceUpload.objects.all():
             if upload.file:
-                if os.path.exists(upload.file.path): # Check if file exists before trying to delete
-                    upload.file.delete(save=False) # save=False to avoid re-saving model during cleanup
-        # Clean up test Workspaces and Spaces if created
-        if hasattr(self, 'ws_for_model_test'):
+                if os.path.exists(upload.file.path):
+                    upload.file.delete(save=False)
+        if hasattr(self, 'ws_for_model_test') and self.ws_for_model_test: # Check if exists before deleting
             self.ws_for_model_test.delete()
-
 
     def test_confluence_upload_creation(self):
         upload = ConfluenceUpload.objects.create(user=self.user, file=self.dummy_file)
         self.assertTrue(upload.file.name.endswith("model.zip"))
         self.assertEqual(upload.status, ConfluenceUpload.STATUS_PENDING)
-        self.assertIsNone(upload.target_workspace) # Check default for new fields
+        self.assertIsNone(upload.target_workspace)
         self.assertIsNone(upload.target_space)
 
     def test_confluence_upload_str_method(self):
@@ -141,7 +136,6 @@ class ConfluenceUploadModelTests(TestCase):
         if not Workspace or not Space:
             self.skipTest("Workspace or Space models not available for this test.")
 
-        # Use instances created in setUp
         ws = self.ws_for_model_test
         space = self.space_for_model_test
 
@@ -157,13 +151,11 @@ class ConfluenceUploadModelTests(TestCase):
 
 class ConfluenceImportViewTests(TestCase):
     def setUp(self):
-        # super().setUp() # Not inheriting from a common base with setUp
         self.user = User.objects.create_user(username='view_testuser_targets', password='password')
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
-        self.import_url = "/api/v1/io/import/confluence/" # Ensure this URL is registered in urls.py
+        self.import_url = "/api/v1/io/import/confluence/"
 
-        # Create workspaces and spaces for view tests
         if Workspace:
             self.workspace1 = Workspace.objects.create(name="WS1 for View Test", owner=self.user)
             if Space:
@@ -171,35 +163,31 @@ class ConfluenceImportViewTests(TestCase):
             self.workspace2 = Workspace.objects.create(name="WS2 for View Test", owner=self.user)
             if Space:
                 self.space1_ws2 = Space.objects.create(name="Space1 in WS2", key="S1W2VW", workspace=self.workspace2, owner=self.user)
-        else: # Set to None if models aren't available, tests relying on them will be skipped.
+        else:
             self.workspace1 = None
             self.space1_ws1 = None
             self.workspace2 = None
             self.space1_ws2 = None
-            print("ConfluenceImportViewTests: Workspace/Space models not available. Some view tests might be skipped or fail if they rely on these models.")
 
     def tearDown(self):
-        # Clean up files from FileField
-        ConfluenceUpload.objects.all().delete() # Ensures files are handled by model's custom delete if any, or signals
-        # Clean up test Workspaces and Spaces
+        ConfluenceUpload.objects.all().delete()
         if hasattr(self, 'workspace1') and self.workspace1: self.workspace1.delete()
         if hasattr(self, 'workspace2') and self.workspace2: self.workspace2.delete()
-        # Spaces are cascade-deleted with workspaces.
 
-    @patch('importer.views.import_confluence_space.delay')
-    def test_post_request_triggers_import_task(self, mock_delay): # This tests fallback target logic
+    @patch('importer.views.import_confluence_space')
+    def test_post_request_triggers_import_task(self, mock_import_task):
         dummy_file = SimpleUploadedFile("test.zip", b"content", "application/zip")
         response = self.client.post(self.import_url, {'file': dummy_file}, format='multipart')
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED, response.data)
         self.assertEqual(ConfluenceUpload.objects.count(), 1)
         upload = ConfluenceUpload.objects.first()
-        self.assertIsNone(upload.target_workspace) # No targets specified by client
+        self.assertIsNone(upload.target_workspace)
         self.assertIsNone(upload.target_space)
-        mock_delay.assert_called_once_with(confluence_upload_id=upload.id)
+        mock_import_task.delay.assert_called_once_with(confluence_upload_id=upload.id)
 
-    @patch('importer.views.import_confluence_space.delay')
-    def test_import_view_with_target_workspace_and_space_success(self, mock_delay):
+    @patch('importer.views.import_confluence_space')
+    def test_import_view_with_target_workspace_and_space_success(self, mock_import_task):
         if not self.workspace1 or not self.space1_ws1:
             self.skipTest("Workspace/Space not available for target selection test.")
 
@@ -218,10 +206,10 @@ class ConfluenceImportViewTests(TestCase):
         upload_record = ConfluenceUpload.objects.first()
         self.assertEqual(upload_record.target_workspace, self.workspace1)
         self.assertEqual(upload_record.target_space, self.space1_ws1)
-        mock_delay.assert_called_once_with(confluence_upload_id=upload_record.id)
+        mock_import_task.delay.assert_called_once_with(confluence_upload_id=upload_record.id)
 
-    @patch('importer.views.import_confluence_space.delay')
-    def test_import_view_with_only_target_workspace_success(self, mock_delay):
+    @patch('importer.views.import_confluence_space')
+    def test_import_view_with_only_target_workspace_success(self, mock_import_task):
         if not self.workspace1:
             self.skipTest("Workspace not available for target selection test.")
 
@@ -232,43 +220,43 @@ class ConfluenceImportViewTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED, response.data)
         upload_record = ConfluenceUpload.objects.first()
         self.assertEqual(upload_record.target_workspace, self.workspace1)
-        self.assertIsNone(upload_record.target_space) # Space was not specified by client
-        mock_delay.assert_called_once_with(confluence_upload_id=upload_record.id)
+        self.assertIsNone(upload_record.target_space)
+        mock_import_task.delay.assert_called_once_with(confluence_upload_id=upload_record.id)
 
-    @patch('importer.views.import_confluence_space.delay')
-    def test_import_view_invalid_target_workspace_id(self, mock_delay):
+    @patch('importer.views.import_confluence_space')
+    def test_import_view_invalid_target_workspace_id(self, mock_import_task):
         test_file = SimpleUploadedFile("invalid_ws.zip", b"c", "application/zip")
-        payload = {'file': test_file, 'target_workspace_id': 99999} # Non-existent ID
+        payload = {'file': test_file, 'target_workspace_id': 99999}
         response = self.client.post(self.import_url, data=payload, format='multipart')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        mock_delay.assert_not_called() # Task should not be called
+        mock_import_task.delay.assert_not_called()
 
-    @patch('importer.views.import_confluence_space.delay')
-    def test_import_view_invalid_target_space_id(self, mock_delay):
+    @patch('importer.views.import_confluence_space')
+    def test_import_view_invalid_target_space_id(self, mock_import_task):
         test_file = SimpleUploadedFile("invalid_sp.zip", b"c", "application/zip")
-        payload = {'file': test_file, 'target_space_id': 88888} # Non-existent ID
+        payload = {'file': test_file, 'target_space_id': 88888}
         response = self.client.post(self.import_url, data=payload, format='multipart')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        mock_delay.assert_not_called() # Task should not be called
+        mock_import_task.delay.assert_not_called()
 
-    @patch('importer.views.import_confluence_space.delay')
-    def test_import_view_space_not_in_workspace_error(self, mock_delay):
-        if not self.workspace1 or not self.space1_ws2: # space1_ws2 belongs to workspace2
+    @patch('importer.views.import_confluence_space')
+    def test_import_view_space_not_in_workspace_error(self, mock_import_task):
+        if not self.workspace1 or not self.space1_ws2:
             self.skipTest("Workspace/Space setup not available for cross-match test.")
 
         test_file = SimpleUploadedFile("cross_match.zip", b"c", "application/zip")
         payload = {
             'file': test_file,
             'target_workspace_id': self.workspace1.id,
-            'target_space_id': self.space1_ws2.id # This space is in workspace2
+            'target_space_id': self.space1_ws2.id
         }
         response = self.client.post(self.import_url, data=payload, format='multipart')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("does not belong to target workspace", response.data.get('error', '').lower())
-        mock_delay.assert_not_called() # Task should not be called
+        mock_import_task.delay.assert_not_called()
 
 
-class EnhancedHtmlParserTests(TestCase): # Keep existing tests below as they are
+class EnhancedHtmlParserTests(TestCase):
     def setUp(self): self.temp_dir = tempfile.mkdtemp(prefix="parser_enhanced_")
     def tearDown(self): shutil.rmtree(self.temp_dir)
     def _create_dummy_html_file(self, name, content):
@@ -291,6 +279,80 @@ class EnhancedHtmlParserTests(TestCase): # Keep existing tests below as they are
     def test_parsing_error_returns_dict_with_error(self):
         r = parse_html_file_basic(self._create_dummy_html_file("b.html", b"\0\1\2".decode('latin-1',errors='ignore')))
         self.assertIsNotNone(r); self.assertIn("error",r)
+
+    def test_extract_page_id_from_meta_ajs_page_id(self):
+        html_content = '<html><head><meta name="ajs-page-id" content="778899"></head><body>Content</body></html>'
+        file_path = self._create_dummy_html_file("meta_ajs.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("html_extracted_page_id"), "778899")
+
+    def test_extract_page_id_from_meta_confluence_page_id(self):
+        html_content = '<html><head><meta name="confluence-page-id" content="112233"></head><body>Content</body></html>'
+        file_path = self._create_dummy_html_file("meta_conf.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("html_extracted_page_id"), "112233")
+
+    def test_extract_page_id_from_html_comment_pageid(self):
+        html_content = "<html><body><!-- pageId: 98765 -->Content</body></html>"
+        file_path = self._create_dummy_html_file("comment_pid.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("html_extracted_page_id"), "98765")
+
+    def test_extract_page_id_from_html_comment_confluence_page_id_case_insensitive(self):
+        html_content = "<html><body><!-- Confluence-Page-ID : 54321 -->Content</body></html>"
+        file_path = self._create_dummy_html_file("comment_confpid.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("html_extracted_page_id"), "54321")
+
+    def test_extract_page_id_from_html_comment_content_id(self):
+        html_content = "<html><body><!-- content-id: 777111 -->Content</body></html>"
+        file_path = self._create_dummy_html_file("comment_contentid.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("html_extracted_page_id"), "777111")
+
+    def test_no_page_id_found_in_html(self):
+        html_content = "<html><head><title>No ID Page</title></head><body>Content</body></html>"
+        file_path = self._create_dummy_html_file("no_id.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.get("html_extracted_page_id"))
+
+    def test_priority_of_page_id_extraction_meta_over_comment(self):
+        html_content = """
+        <html><head><meta name="ajs-page-id" content="111"></head>
+        <body><!-- pageId: 222 -->Content</body></html>
+        """
+        file_path = self._create_dummy_html_file("priority.html", html_content)
+        result = parse_html_file_basic(file_path)
+        self.assertEqual(result.get("html_extracted_page_id"), "111")
+
+        html_content_2 = """
+        <html><head><meta name="confluence-page-id" content="333"></head>
+        <body><!-- pageId: 444 -->Content</body></html>
+        """
+        file_path_2 = self._create_dummy_html_file("priority2.html", html_content_2)
+        result_2 = parse_html_file_basic(file_path_2)
+        self.assertEqual(result_2.get("html_extracted_page_id"), "333")
+
+    def test_empty_file_returns_error_and_no_id(self):
+        file_path = self._create_dummy_html_file("empty_file.html", "")
+        result = parse_html_file_basic(file_path)
+        self.assertIsNotNone(result)
+        self.assertIn("error", result)
+        self.assertIsNotNone(result.get("error"))
+        self.assertIsNone(result.get("html_extracted_page_id"))
+
+    def test_file_with_only_whitespace_returns_error(self):
+        file_path = self._create_dummy_html_file("whitespace_file.html", "   \n   \t ")
+        result = parse_html_file_basic(file_path)
+        self.assertIsNotNone(result)
+        self.assertIn("error", result)
+        self.assertIsNotNone(result.get("error"))
 
 class HtmlConverterTests(TestCase):
     def test_empty_and_none_html(self):
