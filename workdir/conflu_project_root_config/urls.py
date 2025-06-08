@@ -8,6 +8,7 @@ urlpatterns = [
     path('accounts/', include('allauth.urls')), # Corrected: removed extra \n from previous script
     path('admin/', admin.site.urls),
     path('api/v1/', include('api.urls')),
+    path('api/v1/content/', include('pages.urls')), # New path for pages app
     path('debug/', include('core.urls')), # Assuming core.urls exists for debug view
     path('api/v1/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/v1/schema/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
