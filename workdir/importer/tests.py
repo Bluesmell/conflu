@@ -581,7 +581,8 @@ class ConfluenceImportTaskTests(TestCase):
     def test_import_task_success_simple_page_no_attachments(self):
         if not self.space: self.skipTest("Space not available.")
         html_data = {"p_123.html": "<html><title>T1</title><body><div id='main-content'><p>C1</p></div></body></html>"}
-        zip_path = self._create_dummy_confluence_zip("t1.zip", html_files_data=html_data)
+        metadata_xml = """<hibernate-generic><object class='Page'><property name='id'><long>123</long></property><property name='title'><string>T1</string></property></object></hibernate-generic>"""
+        zip_path = self._create_dummy_confluence_zip("t1.zip", html_files_data=html_data, metadata_xml_content=metadata_xml)
         with open(zip_path, 'rb') as f: upload_file = SimpleUploadedFile(name="t1.zip",content=f.read(),content_type='application/zip')
         upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file)
         msg = import_confluence_space(confluence_upload_id=upload_record.id)
@@ -595,7 +596,8 @@ class ConfluenceImportTaskTests(TestCase):
         html_content = "<html><title>PAI</title><body><div id='main-content'><p><img src='../attachments/photo.png' alt='TP' title='MPT'> <img src='attachments/table_image.jpeg' alt='TI'></p></div></body></html>"
         html_data = {"p_img_800.html": html_content}
         attachments = {"photo.png": b"photo_data", "table_image.jpeg": b"jpeg_data"}
-        zip_path = self._create_dummy_confluence_zip("t_img.zip", html_data, attachments, create_attachments_subfolder=True)
+        metadata_xml = """<hibernate-generic><object class='Page'><property name='id'><long>800</long></property><property name='title'><string>PAI</string></property></object></hibernate-generic>"""
+        zip_path = self._create_dummy_confluence_zip("t_img.zip", html_data, attachments, create_attachments_subfolder=True, metadata_xml_content=metadata_xml)
         with open(zip_path,'rb') as f: upload_file=SimpleUploadedFile("t_img.zip",f.read(),'application/zip')
         upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file)
         import_confluence_space(upload_record.id)
@@ -630,7 +632,8 @@ class ConfluenceImportTaskTests(TestCase):
 
     def test_import_task_with_page_hierarchy(self):
         if not self.space: self.skipTest("Space not available for hierarchy test.")
-        xml = "<hibernate-generic><object class='Page'><property name='id'><long>100</long></property><property name='title'><string>P H</string></property></object><object class='Page'><property name='id'><long>101</long></property><property name='title'><string>C H1</string></property><property name='parent'><id>100</id></property></object></hibernate-generic>"
+        # Corrected titles in XML to match HTML titles (no spaces)
+        xml = "<hibernate-generic><object class='Page'><property name='id'><long>100</long></property><property name='title'><string>PH</string></property></object><object class='Page'><property name='id'><long>101</long></property><property name='title'><string>CH1</string></property><property name='parent'><id>100</id></property></object></hibernate-generic>"
         html = {"P_H_100.html":"<html><title>PH</title><body><p>P</p></body></html>", "C_H1_101.html":"<html><title>CH1</title><body><p>C</p></body></html>"}
         zip_path = self._create_dummy_confluence_zip("th.zip", html, metadata_xml_content=xml)
         with open(zip_path,'rb') as f: upload_file=SimpleUploadedFile("th.zip",f.read(),'application/zip')
@@ -642,3 +645,126 @@ class ConfluenceImportTaskTests(TestCase):
         c_h1 = Page.objects.get(original_confluence_id="101",space=self.space)
         self.assertEqual(c_h1.parent, p_h); self.assertIsNone(p_h.parent)
         self.assertIn(c_h1, p_h.children.all())
+
+    def test_import_task_html_file_not_in_metadata_is_skipped(self):
+        if not self.workspace or not self.space:
+            self.skipTest("Workspace or Space not available for testing.")
+
+        # Metadata only defines Page A (ID 100)
+        sample_metadata_xml = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>100</long></property>
+                <property name="title"><string>Page A Title from Meta</string></property>
+            </object>
+        </hibernate-generic>
+        """
+
+        html_data = {
+            # HTML for Page A, title matches metadata
+            "pageA_100.html": "<html><head><title>Page A Title from Meta</title></head><body>Content A</body></html>",
+            # HTML for Page B, which is NOT in metadata
+            "pageB_200.html": "<html><head><title>Page B Title (Not in Meta)</title></head><body>Content B</body></html>"
+        }
+
+        zip_path = self._create_dummy_confluence_zip(
+            "test_stray_html.zip",
+            html_files_data=html_data,
+            metadata_xml_content=sample_metadata_xml
+        )
+
+        upload_file = SimpleUploadedFile(name=os.path.basename(zip_path), content=open(zip_path, 'rb').read(), content_type='application/zip')
+        upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file)
+
+        result_message = import_confluence_space(confluence_upload_id=upload_record.id)
+
+        upload_record.refresh_from_db()
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED, "Import should complete as Page A is processed.")
+        self.assertIn("Pages created: 1", result_message)
+        self.assertEqual(Page.objects.count(), 1)
+
+        # Verify Page A was created
+        self.assertTrue(Page.objects.filter(original_confluence_id="100", title="Page A Title from Meta", space=self.space).exists())
+        # Verify Page B was NOT created
+        self.assertFalse(Page.objects.filter(title="Page B Title (Not in Meta)").exists())
+        # Assuming original_confluence_id for Page B would be '200' if it were to be created by some fallback from filename
+        self.assertFalse(Page.objects.filter(original_confluence_id="200").exists())
+
+
+    def test_import_task_page_in_metadata_html_title_mismatch(self):
+        if not self.workspace or not self.space:
+            self.skipTest("Workspace or Space not available for testing.")
+
+        # Metadata defines Page X with "Title X from Meta"
+        sample_metadata_xml = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>300</long></property>
+                <property name="title"><string>Title X from Meta</string></property>
+            </object>
+        </hibernate-generic>
+        """
+
+        html_data = {
+            # HTML file's actual parsed title will be "Different Title in HTML"
+            "pageX_300.html": "<html><head><title>Different Title in HTML</title></head><body>Content X</body></html>"
+        }
+
+        zip_path = self._create_dummy_confluence_zip(
+            "test_title_mismatch.zip",
+            html_files_data=html_data,
+            metadata_xml_content=sample_metadata_xml
+        )
+
+        upload_file = SimpleUploadedFile(name=os.path.basename(zip_path), content=open(zip_path, 'rb').read(), content_type='application/zip')
+        upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file)
+
+        result_message = import_confluence_space(confluence_upload_id=upload_record.id)
+
+        upload_record.refresh_from_db()
+        # Task logic: if metadata is present, but no pages from it are created (due to mismatch), it's FAILED.
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_FAILED, "Import should fail as page from metadata couldn't be matched by title.")
+        self.assertIn("Pages created: 0", result_message) # Check message as well
+        self.assertEqual(Page.objects.count(), 0)
+
+
+    def test_import_task_fails_if_metadata_file_is_present_but_empty_or_unparsable(self):
+        if not self.workspace or not self.space: # Ensure space is available for consistency, though not strictly needed for this failure case
+            self.skipTest("Workspace or Space not available for testing.")
+
+        # Case 1: Metadata is empty XML (no page objects)
+        empty_metadata_xml = "<hibernate-generic></hibernate-generic>"
+        # HTML data is provided, but shouldn't be processed if metadata is the driver and is empty
+        html_data = {"page_data_400.html": "<html><head><title>Some Page</title></head><body>Content</body></html>"}
+
+        zip_path_empty_meta = self._create_dummy_confluence_zip(
+            "test_empty_meta.zip",
+            html_files_data=html_data,
+            metadata_xml_content=empty_metadata_xml
+        )
+        upload_file_empty = SimpleUploadedFile(name=os.path.basename(zip_path_empty_meta), content=open(zip_path_empty_meta, 'rb').read(), content_type='application/zip')
+        upload_record_empty = ConfluenceUpload.objects.create(user=self.user, file=upload_file_empty)
+
+        import_confluence_space(confluence_upload_id=upload_record_empty.id)
+        upload_record_empty.refresh_from_db()
+        self.assertEqual(upload_record_empty.status, ConfluenceUpload.STATUS_FAILED, "Import should fail if metadata is present but effectively empty (no page objects).")
+
+        # Case 2: Metadata is malformed XML
+        # Ensure previous objects are cleared or use different upload record
+        Page.objects.all().delete() # Clear any pages from previous case if DB is not reset per test method
+        ConfluenceUpload.objects.all().delete() # Clear previous upload records
+
+        malformed_metadata_xml = "<unclosed><tag>"
+        zip_path_malformed_meta = self._create_dummy_confluence_zip(
+            "test_malformed_meta.zip",
+            html_files_data=html_data,
+            metadata_xml_content=malformed_metadata_xml
+        )
+        upload_file_malformed = SimpleUploadedFile(name=os.path.basename(zip_path_malformed_meta), content=open(zip_path_malformed_meta, 'rb').read(), content_type='application/zip')
+        upload_record_malformed = ConfluenceUpload.objects.create(user=self.user, file=upload_file_malformed)
+
+        import_confluence_space(confluence_upload_id=upload_record_malformed.id)
+        upload_record_malformed.refresh_from_db()
+        # The task currently might raise an Exception with malformed XML, which is caught by the main try-except.
+        # The status will be FAILED due to the caught exception.
+        self.assertEqual(upload_record_malformed.status, ConfluenceUpload.STATUS_FAILED, "Import should fail if metadata is malformed.")
