@@ -78,6 +78,37 @@ class PageModelTests(TestCase):
         self.assertIsNone(page.content_json)
         self.assertEqual(page.title, 'Page with Null Content')
 
+    def test_page_parent_child_relationship(self):
+        if not self.workspace or not self.space: # self.space is used by Page model
+            self.skipTest("Workspace or Space not available for testing parent-child relationships.")
+
+        parent_page = Page.objects.create(
+            title="Parent Page Section",
+            # workspace=self.workspace, # Page model links to Space, not Workspace directly
+            space=self.space,
+            imported_by=self.user
+        )
+        child_page = Page.objects.create(
+            title="Child Page Section",
+            # workspace=self.workspace,
+            space=self.space,
+            imported_by=self.user,
+            parent=parent_page # Set parent relationship using the 'parent' field
+        )
+
+        self.assertEqual(child_page.parent, parent_page)
+        self.assertEqual(parent_page.children.count(), 1) # 'children' is the related_name
+        self.assertIn(child_page, parent_page.children.all())
+
+        # Test on_delete=SET_NULL
+        parent_page_id = parent_page.id
+        parent_page.delete()
+        child_page.refresh_from_db()
+        self.assertIsNone(child_page.parent)
+        # Verify parent is actually gone
+        with self.assertRaises(Page.DoesNotExist):
+            Page.objects.get(id=parent_page_id)
+
 
 class AttachmentModelTests(TestCase):
     @classmethod

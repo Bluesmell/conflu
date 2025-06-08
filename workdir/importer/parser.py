@@ -155,3 +155,126 @@ if __name__ == '__main__':
         shutil.rmtree(example_base_dir)
         print(f"Cleaned up example base directory: {os.path.abspath(example_base_dir)}")
     print("Enhanced HTML parser example usage finished.")
+
+import xml.etree.ElementTree as ET
+
+def parse_confluence_metadata_for_hierarchy(metadata_file_path):
+    """
+    Parses a Confluence metadata XML file (e.g., entities.xml) to extract page hierarchy.
+
+    Args:
+        metadata_file_path (str): Path to the metadata XML file.
+
+    Returns:
+        list: A list of dictionaries, where each dictionary represents a page
+              and contains 'id', 'title', and 'parent_id' (which can be None).
+              Returns an empty list if parsing fails or file not found.
+    """
+    hierarchy_data = []
+
+    if not metadata_file_path or not os.path.exists(metadata_file_path):
+        print(f"Metadata file not found or path is invalid: {metadata_file_path}")
+        return hierarchy_data
+
+    try:
+        tree = ET.parse(metadata_file_path)
+        root = tree.getroot()
+
+        for obj_element in root.findall(".//object[@class='Page']"):
+            page_info = {'id': None, 'title': None, 'parent_id': None}
+
+            id_prop = obj_element.find("./property[@name='id']/long")
+            if id_prop is not None and id_prop.text:
+                page_info['id'] = id_prop.text.strip()
+
+            title_prop = obj_element.find("./property[@name='title']/string")
+            if title_prop is not None and title_prop.text:
+                page_info['title'] = title_prop.text.strip()
+            elif title_prop is None:
+                 title_prop_alt = obj_element.find("./property[@name='title']")
+                 if title_prop_alt is not None and title_prop_alt.text and not title_prop_alt.findall("*"):
+                     page_info['title'] = title_prop_alt.text.strip()
+
+            parent_prop = obj_element.find("./property[@name='parent']")
+            if parent_prop is not None:
+                parent_id_elem = parent_prop.find("./id")
+                if parent_id_elem is not None and parent_id_elem.text:
+                    page_info['parent_id'] = parent_id_elem.text.strip()
+                else:
+                    parent_obj_id_prop = parent_prop.find("./object[@class='Page']/property[@name='id']/long")
+                    if parent_obj_id_prop is not None and parent_obj_id_prop.text:
+                         page_info['parent_id'] = parent_obj_id_prop.text.strip()
+
+            if page_info['parent_id'] is None:
+                parent_page_prop = obj_element.find("./property[@name='parentPage']/id")
+                if parent_page_prop is not None and parent_page_prop.text:
+                    page_info['parent_id'] = parent_page_prop.text.strip()
+
+            if page_info['id']:
+                hierarchy_data.append(page_info)
+            else:
+                print(f"  Skipping an <object class='Page'> element, could not determine its ID.")
+
+    except ET.ParseError as e:
+        print(f"Error parsing XML metadata file {metadata_file_path}: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred while parsing metadata {metadata_file_path}: {e}")
+
+    if not hierarchy_data:
+        print(f"No hierarchy data extracted from {metadata_file_path}. Check XML structure and parsing logic.")
+
+    return hierarchy_data
+
+# This __main__ block is for the new metadata parser.
+# The existing __main__ block above is for parse_html_file_basic.
+# For clarity in a real file, these might be merged or put in separate test scripts.
+if __name__ == '__main__':
+    # This condition will now also be true when running `python workdir/importer/parser.py`
+    # So, both __main__ blocks will execute. This is fine for now.
+    # A better structure might be to use a command-line argument parser if direct script execution is common.
+
+    # Temporarily ensure 'shutil' is available for this block too, if it was only imported in the first __main__
+    import shutil # If not already globally available in the script. os is global from HTML parser.
+
+    print("\nTesting Confluence Metadata Parser...")
+    sample_xml_content = """
+    <hibernate-generic>
+        <object class="Page">
+            <property name="id"><long>101</long></property>
+            <property name="title"><string>Parent Page</string></property>
+        </object>
+        <object class="Page">
+            <property name="id"><long>102</long></property>
+            <property name="title"><string>Child Page 1</string></property>
+            <property name="parent"><id>101</id></property>
+        </object>
+        <object class="Page">
+            <property name="id"><long>103</long></property>
+            <property name="title"><string>Child Page 2</string></property>
+            <property name="parent">
+                <object class="Page">
+                    <property name="id"><long>101</long></property>
+                </object>
+            </property>
+        </object>
+        <object class="Space">
+            <property name="id"><long>201</long></property>
+            <property name="name"><string>My Space</string></property>
+        </object>
+        <object class="Page">
+             <property name="title"><string>Orphan Page No ID</string></property>
+        </object>
+    </hibernate-generic>
+    """
+    temp_xml_file = "temp_entities_test.xml" # Created in current working directory
+    with open(temp_xml_file, "w", encoding="utf-8") as f:
+        f.write(sample_xml_content)
+
+    hierarchy = parse_confluence_metadata_for_hierarchy(temp_xml_file)
+    print("Extracted Hierarchy:")
+    for item in hierarchy:
+        print(item)
+
+    if os.path.exists(temp_xml_file):
+        os.remove(temp_xml_file)
+    print("Metadata parser test finished.")

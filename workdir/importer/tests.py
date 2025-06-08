@@ -362,6 +362,206 @@ class HtmlConverterTests(TestCase):
         self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
 
 
+from .parser import parse_confluence_metadata_for_hierarchy
+
+class ConfluenceMetadataParserTests(TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp(prefix="metadata_parser_tests_")
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    def _create_dummy_xml_file(self, filename, content):
+        file_path = os.path.join(self.temp_dir, filename)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return file_path
+
+    def test_parse_simple_hierarchy(self):
+        xml_content = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>100</long></property><property name="title"><string>Parent</string></property>
+            </object>
+            <object class="Page">
+                <property name="id"><long>101</long></property><property name="title"><string>Child</string></property>
+                <property name="parent"><id>100</id></property>
+            </object>
+        </hibernate-generic>
+        """
+        file_path = self._create_dummy_xml_file("simple.xml", xml_content)
+        result = parse_confluence_metadata_for_hierarchy(file_path)
+        self.assertEqual(len(result), 2)
+        expected_child = {'id': '101', 'title': 'Child', 'parent_id': '100'}
+        expected_parent = {'id': '100', 'title': 'Parent', 'parent_id': None}
+        self.assertIn(expected_child, result)
+        self.assertIn(expected_parent, result)
+
+    def test_parse_no_parent_for_top_level(self):
+        xml_content = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>200</long></property><property name="title"><string>Top Level Page</string></property>
+            </object>
+        </hibernate-generic>
+        """
+        file_path = self._create_dummy_xml_file("toplevel.xml", xml_content)
+        result = parse_confluence_metadata_for_hierarchy(file_path)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], {'id': '200', 'title': 'Top Level Page', 'parent_id': None})
+
+    def test_parse_nested_parent_object_id_format(self):
+        xml_content = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>300</long></property><property name="title"><string>Parent 300</string></property>
+            </object>
+            <object class="Page">
+                <property name="id"><long>301</long></property><property name="title"><string>Child 301</string></property>
+                <property name="parent"><object class="Page"><property name="id"><long>300</long></property></object></property>
+            </object>
+        </hibernate-generic>
+        """
+        file_path = self._create_dummy_xml_file("nested_parent.xml", xml_content)
+        result = parse_confluence_metadata_for_hierarchy(file_path)
+        expected_child = {'id': '301', 'title': 'Child 301', 'parent_id': '300'}
+        self.assertIn(expected_child, result)
+
+    def test_parse_parent_page_property_format(self):
+        xml_content = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>400</long></property><property name="title"><string>Parent 400</string></property>
+            </object>
+            <object class="Page">
+                <property name="id"><long>401</long></property><property name="title"><string>Child 401</string></property>
+                <property name="parentPage"><id>400</id></property>
+            </object>
+        </hibernate-generic>
+        """
+        file_path = self._create_dummy_xml_file("parentpage_prop.xml", xml_content)
+        result = parse_confluence_metadata_for_hierarchy(file_path)
+        expected_child = {'id': '401', 'title': 'Child 401', 'parent_id': '400'}
+        self.assertIn(expected_child, result)
+
+    def test_parse_empty_xml_or_no_pages(self):
+        xml_content_empty = "<hibernate-generic></hibernate-generic>"
+        xml_content_no_pages = "<hibernate-generic><object class='Space'></object></hibernate-generic>"
+        file_path_empty = self._create_dummy_xml_file("empty.xml", xml_content_empty)
+        file_path_no_pages = self._create_dummy_xml_file("no_pages.xml", xml_content_no_pages)
+
+        self.assertEqual(parse_confluence_metadata_for_hierarchy(file_path_empty), [])
+        self.assertEqual(parse_confluence_metadata_for_hierarchy(file_path_no_pages), [])
+
+    def test_parse_file_not_found(self):
+        self.assertEqual(parse_confluence_metadata_for_hierarchy("nonexistent.xml"), [])
+
+    def test_parse_malformed_xml(self):
+        xml_content = "<unclosed>Malformed XML"
+        file_path = self._create_dummy_xml_file("malformed.xml", xml_content)
+        self.assertEqual(parse_confluence_metadata_for_hierarchy(file_path), [])
+
+
+from .parser import parse_confluence_metadata_for_hierarchy
+
+class ConfluenceMetadataParserTests(TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp(prefix="metadata_parser_tests_")
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    def _create_dummy_xml_file(self, filename, content):
+        file_path = os.path.join(self.temp_dir, filename)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return file_path
+
+    def test_parse_simple_hierarchy(self):
+        xml_content = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>100</long></property><property name="title"><string>Parent</string></property>
+            </object>
+            <object class="Page">
+                <property name="id"><long>101</long></property><property name="title"><string>Child</string></property>
+                <property name="parent"><id>100</id></property>
+            </object>
+        </hibernate-generic>
+        """
+        file_path = self._create_dummy_xml_file("simple.xml", xml_content)
+        result = parse_confluence_metadata_for_hierarchy(file_path)
+        self.assertEqual(len(result), 2)
+        expected_child = {'id': '101', 'title': 'Child', 'parent_id': '100'}
+        expected_parent = {'id': '100', 'title': 'Parent', 'parent_id': None}
+        self.assertIn(expected_child, result)
+        self.assertIn(expected_parent, result)
+
+    def test_parse_no_parent_for_top_level(self):
+        xml_content = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>200</long></property><property name="title"><string>Top Level Page</string></property>
+            </object>
+        </hibernate-generic>
+        """
+        file_path = self._create_dummy_xml_file("toplevel.xml", xml_content)
+        result = parse_confluence_metadata_for_hierarchy(file_path)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], {'id': '200', 'title': 'Top Level Page', 'parent_id': None})
+
+    def test_parse_nested_parent_object_id_format(self):
+        xml_content = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>300</long></property><property name="title"><string>Parent 300</string></property>
+            </object>
+            <object class="Page">
+                <property name="id"><long>301</long></property><property name="title"><string>Child 301</string></property>
+                <property name="parent"><object class="Page"><property name="id"><long>300</long></property></object></property>
+            </object>
+        </hibernate-generic>
+        """
+        file_path = self._create_dummy_xml_file("nested_parent.xml", xml_content)
+        result = parse_confluence_metadata_for_hierarchy(file_path)
+        expected_child = {'id': '301', 'title': 'Child 301', 'parent_id': '300'}
+        self.assertIn(expected_child, result)
+
+    def test_parse_parent_page_property_format(self):
+        xml_content = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>400</long></property><property name="title"><string>Parent 400</string></property>
+            </object>
+            <object class="Page">
+                <property name="id"><long>401</long></property><property name="title"><string>Child 401</string></property>
+                <property name="parentPage"><id>400</id></property>
+            </object>
+        </hibernate-generic>
+        """
+        file_path = self._create_dummy_xml_file("parentpage_prop.xml", xml_content)
+        result = parse_confluence_metadata_for_hierarchy(file_path)
+        expected_child = {'id': '401', 'title': 'Child 401', 'parent_id': '400'}
+        self.assertIn(expected_child, result)
+
+    def test_parse_empty_xml_or_no_pages(self):
+        xml_content_empty = "<hibernate-generic></hibernate-generic>"
+        xml_content_no_pages = "<hibernate-generic><object class='Space'></object></hibernate-generic>"
+        file_path_empty = self._create_dummy_xml_file("empty.xml", xml_content_empty)
+        file_path_no_pages = self._create_dummy_xml_file("no_pages.xml", xml_content_no_pages)
+
+        self.assertEqual(parse_confluence_metadata_for_hierarchy(file_path_empty), [])
+        self.assertEqual(parse_confluence_metadata_for_hierarchy(file_path_no_pages), [])
+
+    def test_parse_file_not_found(self):
+        self.assertEqual(parse_confluence_metadata_for_hierarchy("nonexistent.xml"), [])
+
+    def test_parse_malformed_xml(self):
+        xml_content = "<unclosed>Malformed XML"
+        file_path = self._create_dummy_xml_file("malformed.xml", xml_content)
+        self.assertEqual(parse_confluence_metadata_for_hierarchy(file_path), [])
+
+
 # Imports for ConfluenceImportTaskTests (some might be duplicates from top, ensure organized)
 # zipfile, tempfile, shutil, os are already imported at the top or by other test classes.
 # User, SimpleUploadedFile, ConfluenceUpload are also imported above.
@@ -414,13 +614,14 @@ class ConfluenceImportTaskTests(TestCase):
         self.temp_media_dir_obj.cleanup()
         self.zip_temp_dir_obj.cleanup()
 
-    def _create_dummy_confluence_zip(self, zip_filename, html_files_data=None, attachment_files_data=None, create_attachments_subfolder=False):
+    def _create_dummy_confluence_zip(self, zip_filename, html_files_data=None,
+                                   attachment_files_data=None, create_attachments_subfolder=False,
+                                   metadata_xml_content=None): # New parameter
         html_files_data = html_files_data or {}
         attachment_files_data = attachment_files_data or {}
 
-        zip_file_path = os.path.join(self.zip_temp_dir_path, zip_filename)
-
-        current_zip_content_dir = tempfile.mkdtemp(dir=self.zip_temp_dir_path)
+        zip_file_path = os.path.join(self.zip_temp_dir_path, zip_filename) # Corrected to use self.zip_temp_dir_path
+        current_zip_content_dir = tempfile.mkdtemp(dir=self.zip_temp_dir_path) # Corrected to use self.zip_temp_dir_path
 
         for name, content in html_files_data.items():
             file_path = os.path.join(current_zip_content_dir, name)
@@ -432,12 +633,16 @@ class ConfluenceImportTaskTests(TestCase):
         if create_attachments_subfolder:
             attachments_root_in_zip = os.path.join(current_zip_content_dir, "attachments")
             os.makedirs(attachments_root_in_zip, exist_ok=True)
-
         for name, content in attachment_files_data.items():
             file_path = os.path.join(attachments_root_in_zip, name)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, "wb") as f:
                 f.write(content)
+
+        if metadata_xml_content:
+            metadata_filepath = os.path.join(current_zip_content_dir, "entities.xml")
+            with open(metadata_filepath, "w", encoding="utf-8") as f:
+                f.write(metadata_xml_content)
 
         with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for root_dir, _, files_in_dir in os.walk(current_zip_content_dir):
@@ -533,183 +738,74 @@ class ConfluenceImportTaskTests(TestCase):
         self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_FAILED)
         self.assertEqual(Page.objects.count(), 0)
 
-    def test_multiple_paragraphs(self):
-        html = "<p>First paragraph.</p><p>Second paragraph.</p>"
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "paragraph", "content": [{"type": "text", "text": "First paragraph."}]},
-                {"type": "paragraph", "content": [{"type": "text", "text": "Second paragraph."}]}
-            ]
+    def test_import_task_with_page_hierarchy(self):
+        if not self.workspace or not self.space:
+            self.skipTest("Workspace or Space not available for testing hierarchy.")
+
+        sample_metadata_xml = """
+        <hibernate-generic>
+            <object class="Page">
+                <property name="id"><long>100</long></property>
+                <property name="title"><string>Parent Page H</string></property>
+            </object>
+            <object class="Page">
+                <property name="id"><long>101</long></property>
+                <property name="title"><string>Child Page H1</string></property>
+                <property name="parent"><id>100</id></property>
+            </object>
+            <object class="Page">
+                <property name="id"><long>102</long></property>
+                <property name="title"><string>Child Page H2</string></property>
+                <property name="parent"><id>100</id></property>
+            </object>
+             <object class="Page">
+                <property name="id"><long>103</long></property>
+                <property name="title"><string>Grandchild Page H1.1</string></property>
+                <property name="parent"><id>101</id></property>
+            </object>
+        </hibernate-generic>
+        """
+
+        html_data = {
+            "Parent_Page_H_100.html": "<html><head><title>Parent Page H</title></head><body><div id='main-content'><p>Parent content</p></div></body></html>",
+            "Child_Page_H1_101.html": "<html><head><title>Child Page H1</title></head><body><div id='main-content'><p>Child 1 content</p></div></body></html>",
+            "Child_Page_H2_102.html": "<html><head><title>Child Page H2</title></head><body><div id='main-content'><p>Child 2 content</p></div></body></html>",
+            "Grandchild_Page_H1.1_103.html": "<html><head><title>Grandchild Page H1.1</title></head><body><div id='main-content'><p>Grandchild 1.1 content</p></div></body></html>"
         }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
 
-    def test_headings(self):
-        html = "<h1>H1</h1><h2>H2</h2><h3>H3</h3>"
-        # Current converter wraps top-level text/headings in paragraphs if they are not already.
-        # The current converter's final loop: if item.get("type") == "text": final_doc_content.append({"type": "paragraph", "content": [item]})
-        # This applies to text, but headings are block items. Let's check converter logic for blocks.
-        # map_tag_to_prosemirror_type returns 'heading' for h1.
-        # process_node for 'heading' returns `[pm_node]`. So it's a block.
-        # The final loop's `else: final_doc_content.append(item)` should apply.
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "heading", "attrs": {"level": 1}, "content": [{"type": "text", "text": "H1"}]},
-                {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "H2"}]},
-                {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "H3"}]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+        zip_path = self._create_dummy_confluence_zip(
+            "test_hierarchy.zip",
+            html_files_data=html_data,
+            metadata_xml_content=sample_metadata_xml
+        )
 
-    def test_bold_and_italic_marks(self):
-        html = "<p>This is <strong>bold</strong> and <em>italic</em>.</p>"
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "paragraph", "content": [
-                    {"type": "text", "text": "This is "},
-                    {"type": "text", "marks": [{"type": "bold"}], "text": "bold"},
-                    {"type": "text", "text": " and "},
-                    {"type": "text", "marks": [{"type": "italic"}], "text": "italic"},
-                    {"type": "text", "text": "."}
-                ]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+        with open(zip_path, 'rb') as f_zip:
+            upload_file = SimpleUploadedFile(name=os.path.basename(zip_path), content=f_zip.read(), content_type='application/zip')
+        upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file)
 
-    def test_nested_marks_bold_italic(self):
-        html = "<p><strong><em>Bold and Italic</em></strong></p>"
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "paragraph", "content": [
-                    # Order of marks can matter for strict equality, but logically equivalent.
-                    # The converter's current mark accumulation logic should result in a list.
-                    {"type": "text", "marks": [{"type": "bold"}, {"type": "italic"}], "text": "Bold and Italic"}
-                ]}
-            ]
-        }
-        # To make this test more robust if mark order is not guaranteed:
-        result = convert_html_to_prosemirror_json(html)
-        self.assertEqual(result['type'], 'doc')
-        self.assertEqual(len(result['content']), 1)
-        paragraph_content = result['content'][0].get('content', [])
-        self.assertEqual(len(paragraph_content), 1)
-        text_node = paragraph_content[0]
-        self.assertEqual(text_node.get('type'), 'text')
-        self.assertEqual(text_node.get('text'), 'Bold and Italic')
-        self.assertIn({"type": "bold"}, text_node.get('marks', []))
-        self.assertIn({"type": "italic"}, text_node.get('marks', []))
-        self.assertEqual(len(text_node.get('marks', [])), 2)
+        result_message = import_confluence_space(confluence_upload_id=upload_record.id)
 
+        upload_record.refresh_from_db()
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        self.assertIn("Pages created: 4", result_message)
+        self.assertTrue(Page.objects.count() == 4)
 
-    def test_link_mark(self):
-        html = '<p>Visit our <a href="http://example.com">website</a>.</p>'
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "paragraph", "content": [
-                    {"type": "text", "text": "Visit our "},
-                    {"type": "text", "marks": [{"type": "link", "attrs": {"href": "http://example.com"}}], "text": "website"},
-                    {"type": "text", "text": "."}
-                ]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+        parent_h = Page.objects.get(original_confluence_id="100", space=self.space)
+        child_h1 = Page.objects.get(original_confluence_id="101", space=self.space)
+        child_h2 = Page.objects.get(original_confluence_id="102", space=self.space)
+        grandchild_h1_1 = Page.objects.get(original_confluence_id="103", space=self.space)
 
-    def test_hard_break(self):
-        html = "<p>Line one<br>Line two</p>"
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "paragraph", "content": [
-                    {"type": "text", "text": "Line one"},
-                    {"type": "hard_break"},
-                    {"type": "text", "text": "Line two"}
-                ]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+        self.assertEqual(parent_h.title, "Parent Page H")
+        self.assertEqual(child_h1.title, "Child Page H1")
+        self.assertEqual(child_h2.title, "Child Page H2")
+        self.assertEqual(grandchild_h1_1.title, "Grandchild Page H1.1")
 
-    def test_unordered_list(self):
-        html = "<ul><li>Item 1</li><li>Item 2</li></ul>"
-        # Current converter: list_item content is directly text nodes if not wrapped in <p>
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "bullet_list", "content": [
-                    {"type": "list_item", "content": [{"type": "text", "text": "Item 1"}]},
-                    {"type": "list_item", "content": [{"type": "text", "text": "Item 2"}]}
-                ]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+        self.assertIsNone(parent_h.parent)
+        self.assertEqual(child_h1.parent, parent_h)
+        self.assertEqual(child_h2.parent, parent_h)
+        self.assertEqual(grandchild_h1_1.parent, child_h1)
 
-    def test_ordered_list(self):
-        html = "<ol><li>First</li><li>Second</li></ol>"
-        # Current converter: list_item content is directly text nodes. No 'order' attr by default.
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "ordered_list", "content": [
-                    {"type": "list_item", "content": [{"type": "text", "text": "First"}]},
-                    {"type": "list_item", "content": [{"type": "text", "text": "Second"}]}
-                ]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
-
-    def test_unmapped_tags_are_unwrapped(self):
-        html = "<div><p>Content inside a div.</p></div><span>Text in span.</span>"
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "paragraph", "content": [{"type": "text", "text": "Content inside a div."}]},
-                {"type": "paragraph", "content": [{"type": "text", "text": "Text in span."}]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
-
-    def test_top_level_text_gets_paragraph_wrapper(self):
-        html = "Just some loose text. Followed by more."
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "paragraph", "content": [{"type": "text", "text": "Just some loose text. Followed by more."}]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
-
-    def test_text_stripping_and_empty_nodes(self):
-        # The converter was updated to strip only at block boundaries or for otherwise empty paragraphs.
-        # NavigableString itself isn't stripped in process_node.
-        # The final loop for "paragraph" with only whitespace text: item["content"] = [c for c in item["content"] if c.get("type") != "text" or c.get("text").strip() != ""]
-        # if not item["content"]: continue
-        html_p_spaces = "<p>   Spaces   </p>"
-        expected_p_spaces = {
-            "type": "doc", "content": [
-                {"type": "paragraph", "content": [{"type": "text", "text": "   Spaces   "}]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html_p_spaces), expected_p_spaces)
-
-        html_empty_p = "<p></p>" # This paragraph will be empty, and might be skipped by the final filter
-        self.assertEqual(convert_html_to_prosemirror_json(html_empty_p), {"type": "doc", "content": []})
-
-        html_p_only_spaces = "<p>  </p>" # This paragraph content becomes empty text node, then paragraph is skipped
-        self.assertEqual(convert_html_to_prosemirror_json(html_p_only_spaces), {"type": "doc", "content": []})
-
-    def test_list_item_with_paragraph(self):
-        html = "<ul><li><p>Item 1 in para</p></li></ul>"
-        expected_json = {
-            "type": "doc",
-            "content": [
-                {"type": "bullet_list", "content": [
-                    {"type": "list_item", "content": [
-                        {"type": "paragraph", "content": [{"type": "text", "text": "Item 1 in para"}]}
-                    ]}
-                ]}
-            ]
-        }
-        self.assertEqual(convert_html_to_prosemirror_json(html), expected_json)
+        self.assertCountEqual(list(parent_h.children.all()), [child_h1, child_h2])
+        self.assertCountEqual(list(child_h1.children.all()), [grandchild_h1_1])
+        self.assertEqual(child_h2.children.count(), 0)
+        self.assertEqual(grandchild_h1_1.children.count(), 0)

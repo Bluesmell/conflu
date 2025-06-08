@@ -17,21 +17,12 @@ def extract_html_and_metadata_from_zip(zip_file_path, temp_extract_dir="temp_con
                Returns ([], None) if errors occur or no relevant files are found.
     """
     html_files = []
-    metadata_file = None
-
-    # Ensure temp_extract_dir is an absolute path or resolved correctly
-    # For simplicity, assume it's relative to CWD or an absolute path is given.
-    # If zip_file_path is relative, make it absolute from CWD of this script.
-    # However, this script (utils.py) will run where it's called from, usually project root.
-
-    # Let's assume zip_file_path is correctly pointing to the zip.
-    # And temp_extract_dir will be created relative to the CWD when utils.py is run.
+    # metadata_file will be set by prioritized search
 
     if not os.path.exists(zip_file_path):
         print(f"Error: ZIP file not found at {zip_file_path}")
         return [], None
 
-    # Clean up and create a temporary directory for extraction
     abs_temp_extract_dir = os.path.abspath(temp_extract_dir)
     if os.path.exists(abs_temp_extract_dir):
         shutil.rmtree(abs_temp_extract_dir)
@@ -39,28 +30,53 @@ def extract_html_and_metadata_from_zip(zip_file_path, temp_extract_dir="temp_con
 
     print(f"Extracting ZIP file: {zip_file_path} to {abs_temp_extract_dir}")
 
+    # --- Updated metadata file search logic ---
+    prioritized_metadata_filenames = [
+        'entities.xml',
+        'space.xml',
+    ]
+    secondary_metadata_filenames = [
+        'metadata.json',
+        'space.json',
+        'exportinfo.xml',
+    ]
+    found_metadata_files = {} # Store as {filename_lowercase: path}
+    selected_metadata_file_path = None
+
     try:
         with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
             zip_ref.extractall(abs_temp_extract_dir)
 
-            for root, _, files in os.walk(abs_temp_extract_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    if file.lower().endswith(('.html', '.htm')):
+            for root, _, files_in_root in os.walk(abs_temp_extract_dir):
+                for file_in_zip in files_in_root:
+                    file_path = os.path.join(root, file_in_zip)
+                    file_in_zip_lower = file_in_zip.lower()
+
+                    if file_in_zip_lower.endswith(('.html', '.htm')):
                         html_files.append(os.path.abspath(file_path))
-                    elif file.lower() in ('entities.xml', 'metadata.json', 'exportinfo.xml', 'space.json'):
-                        if metadata_file:
-                            print(f"Warning: Multiple potential metadata files found. Using first one: {metadata_file}")
-                        else:
-                            metadata_file = os.path.abspath(file_path)
-                            print(f"Found potential metadata file: {metadata_file}")
+                    elif file_in_zip_lower in [f.lower() for f in prioritized_metadata_filenames + secondary_metadata_filenames]:
+                        found_metadata_files[file_in_zip_lower] = os.path.abspath(file_path)
+                        print(f"Found potential metadata file: {file_path} (key: {file_in_zip_lower})")
+
+        for preferred_name in prioritized_metadata_filenames:
+            if preferred_name.lower() in found_metadata_files:
+                selected_metadata_file_path = found_metadata_files[preferred_name.lower()]
+                print(f"Selected prioritized metadata file: {selected_metadata_file_path}")
+                break
+
+        if not selected_metadata_file_path:
+            for secondary_name in secondary_metadata_filenames:
+                if secondary_name.lower() in found_metadata_files:
+                    selected_metadata_file_path = found_metadata_files[secondary_name.lower()]
+                    print(f"Selected secondary metadata file: {selected_metadata_file_path}")
+                    break
 
         if not html_files:
-            print(f"No HTML files found in the archive.") # Removed path for brevity
-        if not metadata_file:
-            print(f"No common metadata file found in the archive.")
+            print(f"No HTML files found in the archive.")
+        if not selected_metadata_file_path:
+            print(f"No common metadata file (from defined lists) found in the archive.")
 
-        return html_files, metadata_file
+        return html_files, selected_metadata_file_path
 
     except zipfile.BadZipFile:
         print(f"Error: Invalid or corrupted ZIP file: {zip_file_path}")
