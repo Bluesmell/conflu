@@ -20,7 +20,8 @@ class ConfluenceImportView(APIView):
         try:
             import_confluence_space.delay(
                 uploaded_file_id=placeholder_uploaded_file_id,
-                user_id=user_id_to_pass
+                user_id=user_id_to_pass,
+                dummy_zip_path_for_testing="dummy_confluence_export_for_task.zip"
             )
             message = f"Confluence space import initiated for placeholder file ID: {placeholder_uploaded_file_id}."
             print(f"ConfluenceImportView: Dispatched task for user {user_id_to_pass}, placeholder_id {placeholder_uploaded_file_id}")
