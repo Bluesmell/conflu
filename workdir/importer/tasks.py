@@ -1,112 +1,108 @@
 
 from celery import shared_task
-import time
-import random # For simulation (if any legacy parts use it, not in current task)
+# import time # Removed as it's not used in the new logic
+# import random # Removed as it's not used
 import os
-import zipfile
-import shutil # For cleanup_temp_extraction_dir and __main__ in utils/parser
+import zipfile # Ensure zipfile is imported
+import shutil # For cleanup_temp_extraction_dir
 
 from .utils import extract_html_and_metadata_from_zip, cleanup_temp_extraction_dir
 from .parser import parse_html_file_basic
-# from django.apps import apps # Not currently used, but might be for model access
+from .models import ConfluenceUpload # New import
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=300)
-def import_confluence_space(self, uploaded_file_id, user_id, dummy_zip_path_for_testing=None):
-    # Args:
-    #   uploaded_file_id: ID of a (future) model instance storing uploaded ZIP file info.
-    #   user_id: ID of the user who initiated the import.
-    #   dummy_zip_path_for_testing: Actual path to a ZIP file for this PoC.
+@shared_task(bind=True, max_retries=3, default_retry_delay=300) # Keep existing Celery decorators
+def import_confluence_space(self, confluence_upload_id):
+    try:
+        upload_record = ConfluenceUpload.objects.get(pk=confluence_upload_id)
+    except ConfluenceUpload.DoesNotExist:
+        print(f"[Importer Task] CRITICAL: ConfluenceUpload record {confluence_upload_id} not found. Aborting.")
+        return f"ConfluenceUpload record {confluence_upload_id} not found."
 
-    print(f"[Importer Task] ID {self.request.id} | Starting import_confluence_space for uploaded_file_id: {uploaded_file_id}, by user_id: {user_id}")
+    # Update status to PROCESSING and store task ID
+    upload_record.status = ConfluenceUpload.STATUS_PROCESSING
+    upload_record.task_id = self.request.id
+    upload_record.save()
 
-    zip_file_actual_path = None
-    if dummy_zip_path_for_testing:
-        # Ensure the dummy_zip_path_for_testing is absolute or resolvable from CWD
-        # Celery worker CWD is typically the project root (/app/workdir)
-        if not os.path.isabs(dummy_zip_path_for_testing):
-            # Assuming worker CWD is /app/workdir, and path is relative to it
-            # For this subtask, the dummy zip is created in /app/workdir/
-            zip_file_actual_path = os.path.join(os.getcwd(), dummy_zip_path_for_testing)
-        else:
-            zip_file_actual_path = dummy_zip_path_for_testing
-        print(f"[Importer Task] ID {self.request.id} | Using dummy_zip_path_for_testing: {zip_file_actual_path}")
-    else:
-        print(f"[Importer Task] ID {self.request.id} | ERROR: dummy_zip_path_for_testing not provided for this PoC.")
-        # In real scenario:
-        # UploadedFileModel = apps.get_model('importer', 'ConfluenceUpload')
-        # try:
-        #     upload_record = UploadedFileModel.objects.get(pk=uploaded_file_id)
-        #     zip_file_actual_path = upload_record.file.path
-        #     # upload_record.status = 'PROCESSING'; upload_record.save()
-        # except UploadedFileModel.DoesNotExist:
-        #     print(f"[Importer Task] ID {self.request.id} | ERROR: UploadedFile record {uploaded_file_id} not found.")
-        #     return f"UploadedFile record {uploaded_file_id} not found."
-        return f"dummy_zip_path_for_testing not provided for PoC for {uploaded_file_id}."
+    print(f"[Importer Task] ID {self.request.id} | Starting import for ConfluenceUpload ID: {confluence_upload_id} by User ID: {upload_record.user.id if upload_record.user else 'Unknown'}")
 
-    # Ensure the provided dummy zip actually exists before proceeding
+    zip_file_actual_path = upload_record.file.path
+
     if not os.path.exists(zip_file_actual_path):
-        print(f"[Importer Task] ID {self.request.id} | ERROR: Dummy ZIP file for testing not found at {zip_file_actual_path}.")
-        return f"Dummy ZIP for testing not found at {zip_file_actual_path} for {uploaded_file_id}."
+        error_message = f"Uploaded ZIP file not found at path: {zip_file_actual_path} for Upload ID {confluence_upload_id}."
+        print(f"[Importer Task] ID {self.request.id} | ERROR: {error_message}")
+        upload_record.status = ConfluenceUpload.STATUS_FAILED
+        # upload_record.error_message = error_message # If model had this field
+        upload_record.save()
+        return error_message
 
-    # Unique temp directory for this task instance
-    temp_extraction_main_dir = f"temp_confluence_export_{self.request.id or uploaded_file_id}"
+    # Unique temp directory for this task instance using its own ID
+    temp_extraction_main_dir = f"temp_confluence_export_{self.request.id}"
+    # Ensure CWD is as expected (project root /app/workdir for Celery worker)
     abs_temp_extraction_main_dir = os.path.join(os.getcwd(), temp_extraction_main_dir)
 
-
-    final_message = f"Import task for {uploaded_file_id} encountered an issue."
+    final_task_message = f"Import task for Upload ID {confluence_upload_id} processing completed."
     try:
-        print(f"[Importer Task] ID {self.request.id} | Extracting to: {abs_temp_extraction_main_dir}")
+        print(f"[Importer Task] ID {self.request.id} | Extracting ZIP: {zip_file_actual_path} to: {abs_temp_extraction_main_dir}")
+
         html_files, metadata_file = extract_html_and_metadata_from_zip(
             zip_file_actual_path,
-            temp_extract_dir=abs_temp_extraction_main_dir # Pass absolute path
+            temp_extract_dir=abs_temp_extraction_main_dir
         )
 
         if not html_files:
-            print(f"[Importer Task] ID {self.request.id} | No HTML files extracted from {zip_file_actual_path}.")
-            final_message = f"No HTML files found in ZIP for {uploaded_file_id}."
-            # upload_record.status = 'FAILED'; upload_record.error_message = final_message; upload_record.save()
-            return final_message # Return early
+            message = f"No HTML files found in ZIP for Upload ID {confluence_upload_id}."
+            print(f"[Importer Task] ID {self.request.id} | {message}")
+            upload_record.status = ConfluenceUpload.STATUS_FAILED # Or COMPLETED if no HTML is not an error
+            # upload_record.error_message = message
+            upload_record.save()
+            final_task_message = message
+            return final_task_message # Return early
 
         if metadata_file:
-            print(f"[Importer Task] ID {self.request.id} | Metadata file found: {metadata_file}. Further processing would occur here.")
+            print(f"[Importer Task] ID {self.request.id} | Metadata file found: {metadata_file}. Processing would occur here.")
+            # TODO: Process metadata_file
 
         parsed_data_summary = []
-        for i, html_path in enumerate(html_files[:2]): # Process up to 2 files for PoC
+        # TODO: Remove limit ([:2]) for production. For now, keep it for PoC.
+        for i, html_path in enumerate(html_files[:2]):
             print(f"[Importer Task] ID {self.request.id} | Parsing HTML file ({i+1}/{len(html_files[:2])}): {html_path}")
-            basic_info = parse_html_file_basic(html_path) # html_path is already absolute
+            basic_info = parse_html_file_basic(html_path)
             if basic_info:
                 parsed_data_summary.append({
                     "file": os.path.basename(html_path),
                     "title": basic_info.get("title"),
                     "h1_count": len(basic_info.get("h1_tags", []))
                 })
+                # TODO: Save this parsed data to Page models.
             else:
                 print(f"[Importer Task] ID {self.request.id} | Failed to parse {html_path} or no info extracted.")
 
         if parsed_data_summary:
-            print(f"[Importer Task] ID {self.request.id} | Summary of parsed data (first 2 files):")
+            print(f"[Importer Task] ID {self.request.id} | Summary of parsed data (first {len(parsed_data_summary)} files):")
             for item in parsed_data_summary:
                 print(f"  - File: {item['file']}, Title: {item['title']}, H1s: {item['h1_count']}")
 
-        print(f"[Importer Task] ID {self.request.id} | Basic parsing PoC complete for {uploaded_file_id}.")
-        final_message = f"Import task for {uploaded_file_id} finished basic parsing PoC. Parsed {len(parsed_data_summary)} HTML files."
-        # upload_record.status = 'COMPLETED'; upload_record.save()
+        # TODO: Implement actual data saving to database models (Page, Attachment etc.)
+
+        upload_record.status = ConfluenceUpload.STATUS_COMPLETED
+        upload_record.save()
+        final_task_message = f"Import task for Upload ID {confluence_upload_id} finished basic parsing. Parsed {len(parsed_data_summary)} HTML files."
+        print(f"[Importer Task] ID {self.request.id} | {final_task_message}")
 
     except Exception as e:
-        print(f"[Importer Task] ID {self.request.id} | CRITICAL ERROR during import for {uploaded_file_id}: {e}")
-        # upload_record.status = 'FAILED'; upload_record.error_message = str(e); upload_record.save()
-        # self.retry(exc=e) # Optionally retry
-        final_message = f"Import task for {uploaded_file_id} FAILED: {e}"
+        # Catch any exception during processing
+        error_message_critical = f"CRITICAL ERROR during import for Upload ID {confluence_upload_id}: {e}"
+        print(f"[Importer Task] ID {self.request.id} | {error_message_critical}")
+
+        upload_record.status = ConfluenceUpload.STATUS_FAILED
+        # upload_record.error_message = str(e) # Store the error
+        upload_record.save()
+
+        final_task_message = error_message_critical
+        # self.retry(exc=e) # Optionally retry for certain types of errors
     finally:
-        cleanup_temp_extraction_dir(temp_extract_dir=abs_temp_extraction_main_dir) # Use absolute path
-        # Clean up the dummy zip if it was specifically created for this task test run and path indicates it
-        if dummy_zip_path_for_testing and "created_for_task_test" in dummy_zip_path_for_testing: # Example flag in path
-            if os.path.exists(zip_file_actual_path): # Use resolved absolute path
-                os.remove(zip_file_actual_path)
-                print(f"[Importer Task] ID {self.request.id} | Cleaned up dummy test ZIP: {zip_file_actual_path}")
-            # Also remove the source directory if it follows a pattern
-            dummy_source_dir = os.path.join(os.getcwd(), "dummy_content_task_test_" + str(uploaded_file_id)) # Example pattern
-            if "dummy_content_task_test" in dummy_zip_path_for_testing and os.path.exists(dummy_source_dir):
-                 shutil.rmtree(dummy_source_dir)
-                 print(f"[Importer Task] ID {self.request.id} | Cleaned up dummy source dir: {dummy_source_dir}")
-    return final_message
+        # Ensure cleanup happens
+        cleanup_temp_extraction_dir(temp_extract_dir=abs_temp_extraction_main_dir)
+        print(f"[Importer Task] ID {self.request.id} | Finished processing for ConfluenceUpload ID: {confluence_upload_id}. Final status: {upload_record.status}")
+
+    return final_task_message
