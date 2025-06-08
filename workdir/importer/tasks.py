@@ -8,9 +8,9 @@ import zipfile # Keep for context
 from celery import shared_task
 
 from .utils import extract_html_and_metadata_from_zip, cleanup_temp_extraction_dir
-from .parser import parse_html_file_basic # This now returns title, main_content_html, referenced_attachments
+from .parser import parse_html_file_basic, parse_confluence_metadata_for_hierarchy # Added new parser
 from .models import ConfluenceUpload
-from .converter import convert_html_to_prosemirror_json # New import
+from .converter import convert_html_to_prosemirror_json
 
 # Imports for Page model and Workspace
 from django.contrib.auth import get_user_model
@@ -80,20 +80,29 @@ def import_confluence_space(self, confluence_upload_id):
             print(f"[Importer Task] ID {self.request.id} | {message}")
             upload_record.status = ConfluenceUpload.STATUS_FAILED
             final_task_message = message
-            # upload_record.save() will be handled in finally
-            return final_task_message # Return early
+            return final_task_message
 
+        # --- Parse Metadata for Hierarchy (Early Pass) ---
+        page_hierarchy_from_metadata = []
         if metadata_file:
-            print(f"[Importer Task] ID {self.request.id} | Metadata file found: {metadata_file}. (Metadata processing not yet implemented)")
-            # TODO: Process metadata_file for hierarchy, proper original IDs, etc.
+            print(f"[Importer Task] ID {self.request.id} | Parsing metadata file for hierarchy: {metadata_file}")
+            page_hierarchy_from_metadata = parse_confluence_metadata_for_hierarchy(metadata_file)
+            if page_hierarchy_from_metadata:
+                print(f"  Found {len(page_hierarchy_from_metadata)} page entries in metadata.")
+            else:
+                print(f"  No hierarchy data extracted from metadata file or file was empty/invalid.")
+        else:
+            print(f"[Importer Task] ID {self.request.id} | No metadata file found, cannot process page hierarchy from it.")
 
-        # --- Loop through all HTML files (removed [:2] slice) ---
+        original_id_to_new_pk_map = {} # To map original Confluence IDs to new Page PKs
+
+        # --- Pass 1: Loop through all HTML files, create pages ---
         for i, html_path in enumerate(html_files):
             print(f"[Importer Task] ID {self.request.id} | Processing HTML file ({i+1}/{len(html_files)}): {html_path}")
 
-            parsed_page_data = parse_html_file_basic(html_path) # Enhanced parser
+            parsed_page_data = parse_html_file_basic(html_path)
 
-            if not parsed_page_data or parsed_page_data.get("error"): # Check for parser error
+            if not parsed_page_data or parsed_page_data.get("error"):
                 error_info = parsed_page_data.get('error', 'no main content or parser error') if parsed_page_data else 'parser returned None'
                 print(f"[Importer Task] ID {self.request.id} | Skipping file {html_path} due to: {error_info}.")
                 pages_failed_count += 1
@@ -157,12 +166,15 @@ def import_confluence_space(self, confluence_upload_id):
                     space=target_space, # Assigning to the determined space
                     imported_by=importer_user,
                     original_confluence_id=original_confluence_page_id
-                    # parent_page handling later
+                    # parent field will be set in Pass 2
                 )
                 pages_created_count += 1
-                print(f"  Successfully created Page: '{created_page_object.title}' in Space '{target_space.name}' (ID: {created_page_object.id})")
+                print(f"  Successfully created Page: '{created_page_object.title}' in Space '{target_space.name}' (ID: {created_page_object.id}, OrigID: {original_confluence_page_id})")
 
-                # --- Part 2: Attachment Processing ---
+                if created_page_object.original_confluence_id:
+                    original_id_to_new_pk_map[created_page_object.original_confluence_id] = created_page_object.pk
+
+                # --- Attachment Processing (remains from Part 2 subtask) ---
                 referenced_attachments = parsed_page_data.get("referenced_attachments", [])
                 attachments_created_count_for_page = 0
 
@@ -212,18 +224,57 @@ def import_confluence_space(self, confluence_upload_id):
                 pages_failed_count += 1
                 print(f"[Importer Task] ID {self.request.id} | ERROR processing page '{page_title}' or its attachments: {page_create_error}")
 
+        # --- Pass 2: Link page hierarchy ---
+        if page_hierarchy_from_metadata and original_id_to_new_pk_map:
+            print(f"[Importer Task] ID {self.request.id} | Starting Pass 2: Linking page hierarchy...")
+            pages_linked_count = 0
+            for page_meta_entry in page_hierarchy_from_metadata:
+                original_child_id = page_meta_entry.get('id')
+                original_parent_id = page_meta_entry.get('parent_id')
+
+                if original_child_id and original_parent_id:
+                    child_pk = original_id_to_new_pk_map.get(original_child_id)
+                    parent_pk = original_id_to_new_pk_map.get(original_parent_id)
+
+                    if child_pk and parent_pk:
+                        try:
+                            child_page = Page.objects.get(pk=child_pk)
+                            # Check if parent was already set (e.g. task retry with partial completion)
+                            if child_page.parent_id == parent_pk:
+                                print(f"  Hierarchy for {child_page.title} (OrigID: {original_child_id}) to parent (OrigID: {original_parent_id}) already set.")
+                                continue
+
+                            parent_page_instance = Page.objects.get(pk=parent_pk)
+                            child_page.parent = parent_page_instance
+                            child_page.save()
+                            pages_linked_count += 1
+                            # print(f"  Linked page '{child_page.title}' (OrigID: {original_child_id}) to parent '{parent_page_instance.title}' (OrigID: {original_parent_id})")
+                        except Page.DoesNotExist:
+                            print(f"  WARNING: Could not find child (PK:{child_pk}) or parent (PK:{parent_pk}) page in database for linking. OrigChildID: {original_child_id}, OrigParentID: {original_parent_id}")
+                        except Exception as link_error:
+                            print(f"  ERROR linking page OrigID {original_child_id} to parent OrigID {original_parent_id}: {link_error}")
+
+            if pages_linked_count > 0:
+                print(f"  Successfully linked {pages_linked_count} pages in hierarchy.")
+            else:
+                print(f"  No new page hierarchy links were established in Pass 2.")
+        elif not page_hierarchy_from_metadata:
+            print(f"[Importer Task] ID {self.request.id} | No metadata for hierarchy, skipping Pass 2 for linking.")
+        elif not original_id_to_new_pk_map: # No pages created had original IDs, or no pages created at all
+            print(f"[Importer Task] ID {self.request.id} | No pages mapped with original IDs, skipping Pass 2 for linking.")
+
+
         # Determine final status based on outcomes
-        if pages_created_count > 0:
+        if pages_created_count > 0: # If any page was created, consider it completed, even if some failed or hierarchy failed.
             upload_record.status = ConfluenceUpload.STATUS_COMPLETED
-        elif len(html_files) > 0 and pages_failed_count == len(html_files): # All files processed resulted in failure/skip
+        elif not html_files: # No HTML files to process (status already set by that block)
+            pass
+        else: # No pages created, and there were HTML files to process (all failed or were skipped)
              upload_record.status = ConfluenceUpload.STATUS_FAILED
-        elif not html_files: # No files were found initially (status already set)
-            pass # Keep the status set by the 'if not html_files:' block
-        else: # Mix of success/failure or other conditions not leading to completion
-             upload_record.status = ConfluenceUpload.STATUS_FAILED # Default to FAILED if no pages created or mixed results are unclear
 
         final_task_message = (f"Import task for Upload ID {confluence_upload_id} finished. "
-                              f"Pages created: {pages_created_count}. Pages failed/skipped: {pages_failed_count}.")
+                              f"Pages created: {pages_created_count}. Pages failed/skipped: {pages_failed_count}. "
+                              f"Pages linked in hierarchy: {pages_linked_count if 'pages_linked_count' in locals() else 0}.") # Add link count
         print(f"[Importer Task] ID {self.request.id} | {final_task_message}")
 
     except Exception as e:
