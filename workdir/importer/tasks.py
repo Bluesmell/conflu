@@ -61,7 +61,6 @@ def import_confluence_space(self, confluence_upload_id):
     temp_extraction_main_dir = f"temp_confluence_export_{self.request.id}"
     abs_temp_extraction_main_dir = os.path.join(os.getcwd(), temp_extraction_main_dir)
 
-    # --- Determine Target Workspace and Space ---
     target_workspace_for_import = None
     target_space_for_pages = None
 
@@ -70,13 +69,13 @@ def import_confluence_space(self, confluence_upload_id):
         if hasattr(target_space_for_pages, 'workspace') and target_space_for_pages.workspace:
             target_workspace_for_import = target_space_for_pages.workspace
             print(f"  Targeting specified Space: '{target_space_for_pages.name}' in Workspace '{target_workspace_for_import.name}'.")
-        else: # Should not happen if data is consistent (Space must have a Workspace)
-            target_workspace_for_import = None # Or handle as an error
+        else:
+            target_workspace_for_import = None
             print(f"  Targeting specified Space: '{target_space_for_pages.name}' but its Workspace is not set. This is unusual.")
     elif upload_record.target_workspace:
         target_workspace_for_import = upload_record.target_workspace
         print(f"  Targeting specified Workspace: '{target_workspace_for_import.name}'. Will use first available non-deleted Space in it.")
-        if Space and target_workspace_for_import: # Space model and workspace instance must be available
+        if Space and target_workspace_for_import:
             target_space_for_pages = Space.objects.filter(workspace=target_workspace_for_import, is_deleted=False).first()
             if target_space_for_pages:
                 print(f"    Using first available Space: '{target_space_for_pages.name}'.")
@@ -100,11 +99,11 @@ def import_confluence_space(self, confluence_upload_id):
             print(f"    WARNING: Workspace model not available for fallback.")
 
     if not target_space_for_pages:
-        error_msg_no_space = "Import failed: No target Space could be determined for placing imported pages. Please specify a target or ensure a default/fallback space exists and is not deleted."
+        error_msg_no_space = "Import failed: No target Space could be determined. Please specify a target or ensure a default/fallback space exists."
         print(f"[Importer Task] ID {self.request.id} | {error_msg_no_space}")
         upload_record.status = ConfluenceUpload.STATUS_FAILED
         upload_record.save()
-        if os.path.exists(abs_temp_extraction_main_dir):
+        if os.path.exists(abs_temp_extraction_main_dir): # Check before cleaning, as it might not exist if zip extraction failed
             cleanup_temp_extraction_dir(temp_extract_dir=abs_temp_extraction_main_dir)
         return error_msg_no_space
 
@@ -133,57 +132,90 @@ def import_confluence_space(self, confluence_upload_id):
             print(f"[Importer Task] ID {self.request.id} | CRITICAL: {final_task_message}")
             raise Exception(final_task_message)
 
+        html_id_to_path_map = {}
         parsed_title_to_html_path = {}
         if html_files:
-            print(f"[Importer Task] ID {self.request.id} | Indexing {len(html_files)} HTML files by title...")
+            print(f"[Importer Task] ID {self.request.id} | Indexing {len(html_files)} HTML files by embedded ID and title...")
             for html_path_for_map in html_files:
                 temp_parsed_data = parse_html_file_basic(html_path_for_map)
-                if temp_parsed_data and temp_parsed_data.get("title"):
-                    parsed_title = temp_parsed_data["title"]
-                    if parsed_title in parsed_title_to_html_path:
-                        print(f"  WARNING: Duplicate HTML title '{parsed_title}'. Using first: {parsed_title_to_html_path[parsed_title]}. Skipping {html_path_for_map}.")
-                    else:
-                        parsed_title_to_html_path[parsed_title] = html_path_for_map
-            print(f"  Finished indexing HTML files. Found {len(parsed_title_to_html_path)} unique titles.")
+                if temp_parsed_data and not temp_parsed_data.get("error"):
+                    html_extracted_id = temp_parsed_data.get("html_extracted_page_id")
+                    if html_extracted_id:
+                        if html_extracted_id in html_id_to_path_map:
+                            print(f"  WARNING: Duplicate embedded Page ID '{html_extracted_id}' found. HTML '{os.path.basename(html_path_for_map)}' will not overwrite existing map to '{os.path.basename(html_id_to_path_map[html_extracted_id])}'.")
+                        else:
+                            html_id_to_path_map[html_extracted_id] = html_path_for_map
+
+                    parsed_title = temp_parsed_data.get("title") # This title might be a default "Page <ID>"
+                    if parsed_title:
+                        if parsed_title in parsed_title_to_html_path and parsed_title_to_html_path[parsed_title] != html_path_for_map :
+                            print(f"  WARNING: Duplicate HTML title '{parsed_title}' maps to multiple files. Title map will use first encountered: '{os.path.basename(parsed_title_to_html_path[parsed_title])}'. Skipping path {os.path.basename(html_path_for_map)} for title map.")
+                        elif parsed_title not in parsed_title_to_html_path:
+                             parsed_title_to_html_path[parsed_title] = html_path_for_map
+                elif temp_parsed_data and temp_parsed_data.get("error"):
+                     print(f"  Skipping file '{os.path.basename(html_path_for_map)}' from map creation due to parsing error: {temp_parsed_data.get('error')}")
+            print(f"  Finished indexing. Found {len(html_id_to_path_map)} HTML files with embedded IDs and {len(parsed_title_to_html_path)} HTML files with unique titles.")
         else:
             final_task_message = "Import failed: No HTML files found in ZIP."
             print(f"[Importer Task] ID {self.request.id} | CRITICAL: {final_task_message}")
             raise Exception(final_task_message)
 
         if not page_hierarchy_from_metadata:
-            final_task_message = "Import failed: Page metadata missing or empty, cannot map HTML files to pages."
+            final_task_message = "Import failed: Page metadata missing or empty, cannot proceed."
             print(f"[Importer Task] ID {self.request.id} | CRITICAL: {final_task_message}")
             raise Exception(final_task_message)
 
-        print(f"[Importer Task] ID {self.request.id} | Processing {len(page_hierarchy_from_metadata)} pages into Space '{target_space_for_pages.name}' (ID: {target_space_for_pages.id})")
+        print(f"[Importer Task] ID {self.request.id} | Processing {len(page_hierarchy_from_metadata)} pages from metadata into Space '{target_space_for_pages.name}' (ID: {target_space_for_pages.id})")
         for i, page_meta_entry in enumerate(page_hierarchy_from_metadata):
             authoritative_page_id = page_meta_entry.get('id')
             authoritative_page_title = page_meta_entry.get('title')
 
-            if not authoritative_page_id or not authoritative_page_title:
-                print(f"  WARNING: Metadata entry missing ID or Title. Entry: {page_meta_entry}. Skipping.")
+            if not authoritative_page_id: # Title could be missing too, but ID is key for linking
+                print(f"  WARNING: Metadata entry missing ID. Entry: {page_meta_entry}. Skipping.")
                 pages_failed_count += 1
                 continue
 
-            print(f"  Processing metadata entry ({i+1}/{len(page_hierarchy_from_metadata)}): ID='{authoritative_page_id}', Title='{authoritative_page_title}'")
+            log_page_ref = f"'{authoritative_page_title if authoritative_page_title else 'Untitled'}' (Metadata ID: {authoritative_page_id})"
+            # print(f"  Processing metadata entry ({i+1}/{len(page_hierarchy_from_metadata)}): {log_page_ref}") # Verbose
 
-            html_path = parsed_title_to_html_path.get(authoritative_page_title)
+            html_path = None
+            match_type = "No Match"
+
+            if authoritative_page_id in html_id_to_path_map:
+                html_path = html_id_to_path_map[authoritative_page_id]
+                match_type = "HTML Embedded ID"
+                print(f"    Found HTML for {log_page_ref} by embedded ID match: {os.path.basename(html_path)}")
+            elif authoritative_page_title and authoritative_page_title in parsed_title_to_html_path:
+                html_path = parsed_title_to_html_path[authoritative_page_title]
+                match_type = "HTML Title"
+                print(f"    WARNING: HTML for {log_page_ref} not found by embedded ID. Matched by title using '{authoritative_page_title}': {os.path.basename(html_path)}.")
+
             if not html_path:
-                print(f"    WARNING: HTML file for page '{authoritative_page_title}' (ID: {authoritative_page_id}) not found by title match. Skipping page.")
+                print(f"    ERROR: HTML file for page {log_page_ref} not found by ID or title match. Skipping page.")
                 pages_failed_count += 1
                 continue
 
+            # Re-parse the identified HTML file for its main_content_html and referenced_attachments
             parsed_page_html_data = parse_html_file_basic(html_path)
             if not parsed_page_html_data or parsed_page_html_data.get("error") or not parsed_page_html_data.get("main_content_html"):
-                error_detail = parsed_page_html_data.get("error", "no main_content_html") if parsed_page_html_data else "parser returned None"
-                print(f"    WARNING: Failed to parse main content from HTML file '{html_path}' for page '{authoritative_page_title}'. Error: {error_detail}. Skipping page.")
+                error_detail = parsed_page_html_data.get('error', 'No main content') if parsed_page_html_data else 'Parsing failed'
+                print(f"    WARNING: Failed to parse main content from HTML file '{os.path.basename(html_path)}' for page {log_page_ref} (match type: {match_type}). Error: {error_detail}. Skipping page.")
                 pages_failed_count += 1
                 continue
 
             main_content_html = parsed_page_html_data.get("main_content_html")
-            referenced_attachments_in_html = parsed_page_html_data.get("referenced_attachments", [])
+            html_parsed_title = parsed_page_html_data.get("title")
+            html_extracted_id_from_content = parsed_page_html_data.get("html_extracted_page_id")
+
+            # Logging for title/ID mismatches or confirmations
+            if match_type == "HTML Title" and html_extracted_id_from_content and html_extracted_id_from_content != authoritative_page_id:
+                print(f"    INFO: Page {log_page_ref} matched by TITLE ('{html_parsed_title}'), but its HTML contains a DIFFERENT embedded ID ('{html_extracted_id_from_content}'). Using authoritative metadata ID and title.")
+            elif match_type == "HTML Embedded ID" and html_parsed_title != authoritative_page_title :
+                 print(f"    INFO: Page {log_page_ref} matched by EMBEDDED ID. HTML title ('{html_parsed_title}') differs from metadata title. Using authoritative metadata title.")
+
             content_json = convert_html_to_prosemirror_json(main_content_html)
 
+            # Use authoritative_page_id from metadata for duplicate check
             if Page.objects.filter(original_confluence_id=authoritative_page_id, space=target_space_for_pages).exists():
                 print(f"    Page '{authoritative_page_title}' (OrigID: {authoritative_page_id}) already exists in target space '{target_space_for_pages.name}'. Skipping.")
                 pages_failed_count += 1
@@ -192,16 +224,18 @@ def import_confluence_space(self, confluence_upload_id):
             created_page_object = None
             try:
                 created_page_object = Page.objects.create(
-                    title=authoritative_page_title,
+                    title=authoritative_page_title, # Authoritative title from metadata
                     content_json=content_json,
-                    space=target_space_for_pages, # Use the determined space
+                    space=target_space_for_pages,
                     imported_by=importer_user,
-                    original_confluence_id=authoritative_page_id
+                    original_confluence_id=authoritative_page_id # Authoritative ID from metadata
                 )
                 pages_created_count += 1
-                original_id_to_new_pk_map[authoritative_page_id] = created_page_object.pk
+                if authoritative_page_id: # Should always exist here from metadata
+                    original_id_to_new_pk_map[authoritative_page_id] = created_page_object.pk
                 print(f"    Successfully created Page: '{created_page_object.title}' (DB ID: {created_page_object.pk}) in Space '{target_space_for_pages.name}'")
 
+                referenced_attachments_in_html = parsed_page_html_data.get("referenced_attachments", [])
                 attachments_created_count_for_page = 0
                 if referenced_attachments_in_html:
                     print(f"      Found {len(referenced_attachments_in_html)} referenced attachments. Processing...")
@@ -239,7 +273,7 @@ def import_confluence_space(self, confluence_upload_id):
                         attachments_processed_total += attachments_created_count_for_page
                         print(f"      Processed {attachments_created_count_for_page} attachments for this page.")
 
-                if created_page_object.content_json and 'content' in created_page_object.content_json and attachments_created_count_for_page > 0: # Only try to resolve if attachments were processed
+                if created_page_object.content_json and 'content' in created_page_object.content_json and attachments_created_count_for_page > 0:
                     page_attachments_for_resolve = Attachment.objects.filter(page=created_page_object)
                     attachments_by_filename_map = {
                         att.original_filename: att.file.url for att in page_attachments_for_resolve if att.file and hasattr(att.file, 'url')
@@ -252,7 +286,7 @@ def import_confluence_space(self, confluence_upload_id):
 
             except Exception as page_create_error:
                 pages_failed_count += 1
-                print(f"    ERROR creating page '{authoritative_page_title}' (OrigID: {authoritative_page_id}) or its assets: {page_create_error}")
+                print(f"    ERROR creating page {log_page_ref} or its assets: {page_create_error}")
 
         if page_hierarchy_from_metadata and original_id_to_new_pk_map:
             print(f"[Importer Task] ID {self.request.id} | Starting Pass 2: Linking page hierarchy...")
@@ -277,18 +311,11 @@ def import_confluence_space(self, confluence_upload_id):
         if pages_created_count > 0:
             upload_record.status = ConfluenceUpload.STATUS_COMPLETED
             final_task_message = f"Import completed. Pages created: {pages_created_count}. Pages failed/skipped: {pages_failed_count}. Attachments processed: {attachments_processed_total}. Pages linked: {pages_linked_count}."
-        elif pages_failed_count > 0 and pages_created_count == 0 : # Only set to FAILED if no pages were made but there were attempts/failures
+        elif pages_failed_count > 0 and pages_created_count == 0:
             upload_record.status = ConfluenceUpload.STATUS_FAILED
             final_task_message = f"Import failed. Pages created: 0. Pages failed/skipped: {pages_failed_count}."
-        else: # No pages created, and no specific failures in the loop (e.g. all pages skipped as duplicates, or no pages in metadata matched html)
-            # If it reached here, it means initial checks for metadata/HTML passed.
-            # If page_hierarchy_from_metadata was not empty, but pages_created_count is 0 and pages_failed_count is 0,
-            # it implies all pages in metadata were skipped (e.g., duplicates or no matching HTML).
-            # This isn't necessarily a "FAILED" state for the upload itself if no errors occurred.
-            # It could be "COMPLETED" but with 0 pages created.
-            # The current logic for this 'else' branch might need refinement based on desired behavior.
-            # For now, if status isn't already FAILED from an Exception, and no pages created, consider it "completed with issues" or similar.
-            if upload_record.status != ConfluenceUpload.STATUS_FAILED: # Don't override a previous hard failure
+        else:
+            if upload_record.status != ConfluenceUpload.STATUS_FAILED:
                 upload_record.status = ConfluenceUpload.STATUS_COMPLETED
             final_task_message = f"Import finished. Pages created: {pages_created_count}. Pages failed/skipped: {pages_failed_count}. Attachments processed: {attachments_processed_total}. Pages linked: {pages_linked_count}. Check logs for details if numbers are unexpected."
 

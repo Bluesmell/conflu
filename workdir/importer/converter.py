@@ -134,40 +134,56 @@ def process_node(node, current_marks=None, parent_pm_type=None):
             code_content = node.get_text()
             pm_node_content = [{"type": "text", "text": code_content}] if code_content else [{"type": "text", "text": ""}]
             attrs = {}
-            lang = None
-            if node.has_attr('class'):
-                for cn in node['class']:
-                    if cn.startswith('language-'): lang = cn.replace('language-', '', 1); break
-                    if cn.startswith('language-'):
-                        lang = cn.replace('language-', '', 1)
-                        if lang: break
-            if node.has_attr('class'):
-                class_list = node['class'] # Get the list of classes
+            lang = None # Initialize lang
 
-                # First, check for standard 'language-xxx' or 'lang-xxx'
-                for cn in class_list:
-                    if cn.startswith('language-'):
-                        lang = cn.replace('language-', '', 1)
-                        break # Found language, exit loop
-                    if cn.startswith('lang-'):
-                        lang = cn.replace('lang-', '', 1)
-                        break # Found language, exit loop
+            if node.has_attr('class'):
+                class_list = node['class']
 
-                # If not found, check for Confluence 'brush: language;' style
-                if not lang and 'brush:' in class_list:
+                # Try standard prefixes first
+                for cn_item in class_list:
+                    if cn_item.startswith('language-'):
+                        lang = cn_item.replace('language-', '', 1)
+                        break
+                    if cn_item.startswith('lang-'):
+                        lang = cn_item.replace('lang-', '', 1)
+                        break
+
+                # If not found by prefix, try the refined 'brush:' logic
+                if not lang:
                     try:
-                        brush_idx = class_list.index('brush:')
-                        if brush_idx + 1 < len(class_list):
-                            potential_lang = class_list[brush_idx+1]
-                            # Clean up common delimiters like trailing semicolon
-                            lang = potential_lang.rstrip(';')
-                    except ValueError:
-                        # This case should not be reached if 'brush:' is in class_list
-                        pass
+                        idx_of_brush_marker = -1
+                        class_containing_brush_prefix = None
+                        for idx, cn_item in enumerate(class_list):
+                            if cn_item.startswith('brush:'):
+                                idx_of_brush_marker = idx
+                                class_containing_brush_prefix = cn_item
+                                break
 
-            if lang: attrs['language'] = lang.lower()
+                        if idx_of_brush_marker != -1: # Found an item starting with 'brush:'
+                            if class_containing_brush_prefix == 'brush:' and idx_of_brush_marker + 1 < len(class_list):
+                                # Case: class_list = ['brush:', 'java;', ...]
+                                potential_lang_token = class_list[idx_of_brush_marker + 1]
+                                lang = potential_lang_token.rstrip('; ')
+                            else:
+                                # Case: class_list = ['brush:java;', ...] or ['brush:java', ...]
+                                potential_lang_token = class_containing_brush_prefix.replace('brush:', '', 1).strip()
+                                # If language is part of a parameter string like "java; gutter: false", split it.
+                                if ';' in potential_lang_token:
+                                    lang = potential_lang_token.split(';')[0].strip()
+                                else:
+                                    lang = potential_lang_token
+
+                            # Further clean common syntax if they are part of lang string by mistake
+                            if lang and lang.lower() in ['true', 'false', 'gutter', 'toolbar']:
+                                lang = None # This was likely not a language
+
+                    except Exception:
+                        lang = None # Ensure lang is None if parsing fails
+
+            if lang:
+                attrs['language'] = lang.lower()
             pm_node = {"type": "code_block", "content": pm_node_content}
-            if attrs: pm_node['attrs'] = attrs # This line adds the attributes if found
+            if attrs: pm_node['attrs'] = attrs
             return [pm_node]
 
         new_marks = current_marks[:]
