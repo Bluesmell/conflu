@@ -21,6 +21,9 @@ import javascript from 'highlight.js/lib/languages/javascript';
 import typescript from 'highlight.js/lib/languages/typescript';
 import python from 'highlight.js/lib/languages/python';
 // Add more languages as needed and register them below
+import FallbackMacroPlaceholderExtension from '../../editor/extensions/FallbackMacroPlaceholderExtension';
+import MermaidDiagramExtension from '../../editor/extensions/MermaidDiagramExtension';
+import DrawioDiagramExtension from '../../editor/extensions/DrawioDiagramExtension'; // Import Drawio extension
 
 import EditorToolbar from './EditorToolbar';
 import './TiptapEditor.css';
@@ -76,8 +79,33 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, pageTitl
         },
       }),
       Image.configure({
-        // inline: false, // Default is false (block image)
-        // allowBase64: false, // Default is false
+        inline: false, // Keep as block element
+        allowBase64: true, // Allow base64 images, though URL is primary
+        HTMLAttributes: {
+          class: 'tiptap-image', // Add a general class for styling
+        },
+      }).extend({
+        // Add attributes for alignment and size
+        addAttributes() {
+          return {
+            ...this.parent?.(), // Retain existing attributes (src, alt, title)
+            align: {
+              default: 'none', // 'none', 'left', 'center', 'right'
+              parseHTML: element => element.getAttribute('data-align') || 'none',
+              renderHTML: attributes => ({ 'data-align': attributes.align }),
+            },
+            width: {
+              default: null,
+              parseHTML: element => element.getAttribute('width'),
+              renderHTML: attributes => ({ width: attributes.width }),
+            },
+            height: {
+              default: null,
+              parseHTML: element => element.getAttribute('height'),
+              renderHTML: attributes => ({ height: attributes.height }),
+            },
+          };
+        },
       }),
       Table.configure({
         resizable: true,
@@ -92,6 +120,9 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, pageTitl
       CodeBlockLowlight.configure({
         lowlight,
       }),
+      FallbackMacroPlaceholderExtension,
+      MermaidDiagramExtension,
+      DrawioDiagramExtension, // Add the Drawio extension
     ],
     content: initialContent, // Initial content
     onUpdate: ({ editor }) => {

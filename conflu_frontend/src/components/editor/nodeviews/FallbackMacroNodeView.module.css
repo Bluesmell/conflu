@@ -1,0 +1,77 @@
+.fallbackMacroWrapper {
+  border: 1px dashed #ccc;
+  padding: 10px;
+  margin: 10px 0;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  user-select: none; /* Prevent text selection of the node view itself */
+}
+
+.fallbackMacroWrapper.editable {
+  /* Styles when the editor is editable */
+  cursor: default; /* Indicate it's an interactable block */
+}
+
+/* Add styles for selected state if Tiptap doesn't handle it well enough by default for atom nodes */
+.ProseMirror-selectednode .fallbackMacroWrapper { /* Check if this selector works */
+  outline: 2px solid #007bff; /* Blue outline when selected */
+  box-shadow: 0 0 5px rgba(0,123,255,0.5);
+}
+
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.header strong {
+  font-weight: bold;
+}
+
+.toggleButton {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  margin-left: 10px;
+}
+
+.toggleButton:hover {
+  background-color: #0056b3;
+}
+
+.details {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #fff;
+  border: 1px solid #eee;
+  border-radius: 3px;
+  font-size: 0.85rem;
+}
+
+.details p {
+  margin: 0 0 5px 0;
+}
+
+.error {
+  color: #d9534f;
+}
+
+.rawContent {
+  white-space: pre-wrap; /* Preserve whitespace and wrap lines */
+  word-break: break-all; /* Break long unbroken strings */
+  max-height: 200px; /* Limit height and make it scrollable */
+  overflow-y: auto;
+  background-color: #2b2b2b; /* Dark background for raw content */
+  color: #f8f8f2; /* Light text */
+  padding: 10px;
+  border-radius: 3px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+}

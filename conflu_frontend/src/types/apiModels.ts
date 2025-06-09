@@ -81,3 +81,26 @@ export interface AssignPermissionPayload {
   group_id?: number;
   permission_codenames: string[];
 }
+
+// --- FallbackMacro Type ---
+// Corresponds to FallbackMacroSerializer in the backend
+export interface FallbackMacro {
+  id: number;
+  macro_name: string;
+  raw_macro_content: string;
+  import_notes?: string | null;
+  placeholder_id_in_content?: string | null; // Assuming this is UUID string
+  page_version_id: number;
+  page_title?: string | null;
+}
+
+// --- Diagram Validation Types ---
+export interface MermaidValidationRequest {
+  syntax: string;
+}
+
+export interface MermaidValidationResponse {
+  is_valid: boolean;
+  error_message: string | null;
+  // Potentially other fields like line_number, details, etc.
+}

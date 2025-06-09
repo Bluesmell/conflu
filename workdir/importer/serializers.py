@@ -75,3 +75,22 @@ class ConfluenceUploadSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.file.url)
             return obj.file.url
         return None
+
+from .models import FallbackMacro # Import FallbackMacro model
+
+class FallbackMacroSerializer(serializers.ModelSerializer):
+    page_version_id = serializers.IntegerField(source='page_version.id', read_only=True)
+    page_title = serializers.CharField(source='page_version.page.title', read_only=True) # Optional: provide some context
+
+    class Meta:
+        model = FallbackMacro
+        fields = [
+            'id',
+            'macro_name',
+            'raw_macro_content',
+            'import_notes',
+            'placeholder_id_in_content', # This UUID might be useful for frontend to locate it if needed
+            'page_version_id', # Context: which page version this macro belongs to
+            'page_title',      # Context: title of the page this macro belongs to
+        ]
+        read_only_fields = fields # Typically, these details are read-only once created by importer

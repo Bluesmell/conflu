@@ -12,8 +12,10 @@ const apiClient = axios.create({
 // Import interfaces from the dedicated types file
 import {
   Space, Page, PageCreatePayload, PageUpdatePayload, PageSearchSerializer,
-  User, Group, SpacePermissionData, AssignPermissionPayload
-} from '../types/apiModels'; // Added permission types
+  User, Group, SpacePermissionData, AssignPermissionPayload,
+  FallbackMacro,
+  MermaidValidationRequest, MermaidValidationResponse // Added Mermaid types
+} from '../types/apiModels';
 import { ConfluenceUpload } from '../types/importerModels';
 
 // API Service Functions
@@ -169,6 +171,22 @@ export const listUsers = async (): Promise<User[]> => {
 
 export const listGroups = async (): Promise<Group[]> => {
   const response = await apiClient.get<Group[]>('/identity/groups/');
+  return response.data;
+};
+
+// FallbackMacro API
+export const getFallbackMacroDetails = async (macroId: number): Promise<FallbackMacro> => {
+  // Assuming the URL is /api/v1/io/fallback-macros/{macroId}/ based on Part 1 plan
+  const response = await apiClient.get<FallbackMacro>(`/io/fallback-macros/${macroId}/`);
+  return response.data;
+};
+
+// Diagram Validation API
+export const validateMermaidSyntax = async (syntax: string): Promise<MermaidValidationResponse> => {
+  const payload: MermaidValidationRequest = { syntax };
+  // The task mentioned it might be in importer.views - if so, /api/v1/io/diagrams/validate/mermaid/
+  // Adjusting to match the likely backend location based on previous tasks.
+  const response = await apiClient.post<MermaidValidationResponse>('/io/diagrams/validate/mermaid/', payload);
   return response.data;
 };
 

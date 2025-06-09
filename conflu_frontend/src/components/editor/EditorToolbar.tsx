@@ -117,6 +117,31 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor }) => {
       >
         Image
       </button>
+      {editor.isActive('image') && (
+        <>
+          <button onClick={() => editor.chain().focus().updateAttributes('image', { align: 'left' }).run()} className={editor.isActive('image', { align: 'left' }) ? 'is-active' : ''}>AlignL</button>
+          <button onClick={() => editor.chain().focus().updateAttributes('image', { align: 'center' }).run()} className={editor.isActive('image', { align: 'center' }) ? 'is-active' : ''}>AlignC</button>
+          <button onClick={() => editor.chain().focus().updateAttributes('image', { align: 'right' }).run()} className={editor.isActive('image', { align: 'right' }) ? 'is-active' : ''}>AlignR</button>
+          <button onClick={() => editor.chain().focus().updateAttributes('image', { align: 'none' }).run()} className={editor.isActive('image', { align: 'none' }) ? 'is-active' : ''}>AlignN</button>
+          <button onClick={() => { const w = prompt("Width (e.g., 250px, 50%):"); if(w) editor.chain().focus().updateAttributes('image', { width: w, height: null }).run(); }}>W</button>
+          <button onClick={() => { const h = prompt("Height (e.g., 250px):"); if(h) editor.chain().focus().updateAttributes('image', { height: h, width: null }).run(); }}>H</button>
+          <button onClick={() => editor.chain().focus().updateAttributes('image', { width: null, height: null, align: 'none' }).run()}>Reset Img</button>
+        </>
+      )}
+      <button
+        onClick={() => editor.chain().focus().setMermaidDiagram().run()}
+        disabled={!editor.can().chain().focus().setMermaidDiagram().run()}
+        className={editor.isActive('mermaidDiagram') ? 'is-active' : ''}
+      >
+        Mermaid
+      </button>
+      <button
+        onClick={() => editor.chain().focus().setDrawioDiagram().run()}
+        disabled={!editor.can().chain().focus().setDrawioDiagram().run()}
+        className={editor.isActive('drawioDiagram') ? 'is-active' : ''}
+      >
+        Draw.io
+      </button>
       <button
         onClick={() => editor.chain().focus().toggleCodeBlock().run()}
         disabled={!editor.can().chain().focus().toggleCodeBlock().run()}

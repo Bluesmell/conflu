@@ -108,3 +108,16 @@ class ConfluenceUploadStatusView(RetrieveAPIView):
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+
+from .models import FallbackMacro # Import FallbackMacro model
+from .serializers import FallbackMacroSerializer # Import its serializer
+
+class FallbackMacroDetailView(RetrieveAPIView):
+    """
+    API view to retrieve details of a FallbackMacro instance.
+    Used by the custom Tiptap node view to show details of an unsupported macro.
+    """
+    queryset = FallbackMacro.objects.all()
+    serializer_class = FallbackMacroSerializer
+    permission_classes = [IsAuthenticated] # Or more specific if needed (e.g., user must have access to the page/space)
+    # lookup_field = 'pk' # Default is 'pk'
