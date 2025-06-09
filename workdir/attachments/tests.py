@@ -40,7 +40,7 @@ class AttachmentAPIPermissionTests(APITestCase):
         cls.space = Space.objects.create(key='ATTACHSPACE', name='Attachment Test Space', owner=cls.uploader)
         cls.page = Page.objects.create(
             space=cls.space, title='Page for Attachments',
-            raw_content={'type':'doc'}, author=cls.uploader, version=1
+            content_json={'type':'doc'}, author=cls.uploader, version=1
         )
         assign_perm('pages.view_page', cls.other_user, cls.page) # Object perm for page
 
