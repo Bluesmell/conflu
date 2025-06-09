@@ -52,7 +52,7 @@ The `workdir/docker-compose.yml` file is configured to set up the backend servic
     docker-compose build
     docker-compose up -d
     ```
-    This will build the Docker images (if not already built) and start all services defined in `docker-compose.yml` in detached mode.
+        This will build the Docker images for services like `backend`, `celeryworker`, and `flower` (if not already built or if their Dockerfile/context has changed) and start all services defined in `docker-compose.yml` in detached mode.
 
 3.  **Run Database Migrations:**
     Once the services are running, apply database migrations:
@@ -71,6 +71,7 @@ The `workdir/docker-compose.yml` file is configured to set up the backend servic
     *   **Backend API:** Typically available at `http://localhost:8000/api/v1/` (or the port mapped in `docker-compose.yml`). The Django admin interface is at `http://localhost:8000/admin/`.
     *   **PostgreSQL Database:** Port `5432` is usually exposed to the host as `5433` (check `docker-compose.yml`).
     *   **Redis:** Port `6379` is usually exposed (check `docker-compose.yml`).
+    *   **Flower (Celery Monitoring):** Accessible at `http://localhost:5555`. The Flower service is used to monitor Celery tasks and workers. It is now built using the project's main `Dockerfile` (the same one used for the `backend` and `celeryworker` services), and the `flower` package has been added to `requirements.txt`. Its command and environment are configured in `docker-compose.yml`.
 
 6.  **Running Backend Tests:**
     To run the Django backend tests:

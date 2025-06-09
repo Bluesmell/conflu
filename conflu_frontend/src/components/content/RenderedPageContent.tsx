@@ -14,7 +14,7 @@ import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 
 // For CodeBlockLowlight
-import { lowlight } from 'lowlight/lib/core'; // Use /core for smaller bundle if only registering some languages
+import { lowlight } from 'lowlight'; // Use /core for smaller bundle if only registering some languages
 import html from 'highlight.js/lib/languages/xml'; // XML for HTML
 import css from 'highlight.js/lib/languages/css';
 import javascript from 'highlight.js/lib/languages/javascript';

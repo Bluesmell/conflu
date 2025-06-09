@@ -62,11 +62,12 @@ services:
       - db # Tasks might interact with the database
 
   flower:
-    image: mher/flower:2.0.1 # Aligning with installed flower version
-    command: flower --broker=${REDIS_URL:-redis://redis:6379/0} --basic_auth=${FLOWER_USER:-user}:${FLOWER_PASSWORD:-pass}
+    build: .
+    command: celery -A conflu_project_root_config.celery flower --broker=${REDIS_URL:-redis://redis:6379/0} --basic_auth=${FLOWER_USER:-user}:${FLOWER_PASSWORD:-pass}
     ports:
       - "5555:5555"
     environment:
+      - DJANGO_SETTINGS_MODULE=conflu_project_root_config.settings
       # REDIS_URL for broker connection by Flower
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       # Basic auth credentials for Flower UI
