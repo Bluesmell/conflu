@@ -1,0 +1,68 @@
+.appSidebar {
+  width: 250px; /* Fixed sidebar width */
+  padding: 20px;
+  background-color: #f8f8f8;
+  border-right: 1px solid #ddd;
+  overflow-y: auto; /* Allow sidebar to scroll if content is long */
+  height: calc(100vh - 60px); /* Full height minus header */
+  flex-shrink: 0; /* Prevent sidebar from shrinking */
+}
+
+.appSidebar h2 {
+  margin-top: 0;
+  font-size: 1.2em;
+  color: #333;
+}
+
+.appSidebar h3 {
+  margin-top: 15px;
+  font-size: 1em;
+  color: #555;
+}
+
+.appSidebar ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.appSidebar li {
+  margin-bottom: 8px;
+}
+
+.appSidebar a {
+  text-decoration: none;
+  color: #007bff;
+  display: block;
+  padding: 5px;
+  border-radius: 4px;
+}
+
+.appSidebar a:hover {
+  background-color: #e9ecef;
+  text-decoration: none;
+}
+
+.appSidebar li.active > a {
+  background-color: #007bff;
+  color: white;
+  font-weight: bold;
+}
+
+.appSidebar ul ul { /* Nested list for pages */
+  padding-left: 15px;
+  margin-top: 5px;
+}
+
+.appSidebar li.activeSubItem > a {
+    background-color: #d4eaff;
+    color: #0056b3;
+    font-weight: normal;
+}
+
+.appSidebar li.activeSubItem > a:hover {
+    background-color: #c0daff;
+}
+
+.appSidebar li.active > a:hover {
+  background-color: #0056b3;
+}

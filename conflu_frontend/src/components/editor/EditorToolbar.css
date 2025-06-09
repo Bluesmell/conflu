@@ -1,0 +1,38 @@
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 8px;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 8px;
+  background-color: #f8f9fa;
+  border-radius: 4px 4px 0 0; /* Match TiptapEditor container if it's rounded */
+}
+
+.editor-toolbar button {
+  background-color: #fff;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 6px 10px;
+  margin-right: 5px;
+  margin-bottom: 5px; /* For wrapping */
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 0.9em;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.editor-toolbar button:hover {
+  background-color: #f0f0f0;
+  border-color: #bbb;
+}
+
+.editor-toolbar button.is-active {
+  background-color: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.editor-toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

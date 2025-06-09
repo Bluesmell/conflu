@@ -31,16 +31,37 @@ class FallbackMacro(models.Model): # Existing model, ensure it's preserved
 
 class ConfluenceUpload(models.Model):
     STATUS_PENDING = 'PENDING'
+    STATUS_PENDING = 'PENDING'
     STATUS_PROCESSING = 'PROCESSING'
     STATUS_COMPLETED = 'COMPLETED'
     STATUS_FAILED = 'FAILED'
+    # New granular progress statuses
+    STATUS_EXTRACTING = 'EXTRACTING'
+    STATUS_PARSING_METADATA = 'PARSING_METADATA'
+    STATUS_PROCESSING_PAGES = 'PROCESSING_PAGES'
+    STATUS_LINKING_HIERARCHY = 'LINKING_HIERARCHY'
+
 
     STATUS_CHOICES = [
         (STATUS_PENDING, 'Pending'),
-        (STATUS_PROCESSING, 'Processing'),
+        (STATUS_EXTRACTING, 'Extracting Files'),
+        (STATUS_PARSING_METADATA, 'Parsing Metadata'),
+        (STATUS_PROCESSING_PAGES, 'Processing Pages'),
+        (STATUS_LINKING_HIERARCHY, 'Linking Hierarchy'),
+        (STATUS_PROCESSING, 'Processing'), # Generic processing, can be fallback
         (STATUS_COMPLETED, 'Completed'),
         (STATUS_FAILED, 'Failed'),
     ]
+
+    # Progress status field - will replace/complement the existing 'status' field for UI purposes
+    progress_status = models.CharField(
+        max_length=30,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        help_text="Detailed status of the import process for progress tracking."
+    )
+    progress_percent = models.IntegerField(default=0, help_text="Overall progress percentage (0-100).")
+
 
     user = models.ForeignKey(
         User,
@@ -94,7 +115,7 @@ class ConfluenceUpload(models.Model):
     pages_failed_count = models.IntegerField(default=0, help_text="Number of pages that failed to import.")
     attachments_succeeded_count = models.IntegerField(default=0, help_text="Number of attachments successfully processed.")
 
-    progress_message = models.CharField(max_length=255, null=True, blank=True, help_text="Current stage or progress message of the import.")
+    progress_message = models.TextField(null=True, blank=True, help_text="Current stage or progress message of the import.") # Changed to TextField
     error_details = models.TextField(null=True, blank=True, help_text="Summary of errors encountered during import.")
 
     class Meta:

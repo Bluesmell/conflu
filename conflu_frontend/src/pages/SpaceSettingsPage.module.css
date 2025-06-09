@@ -1,0 +1,72 @@
+.spaceSettingsPage {
+  padding: 20px;
+  max-width: 1000px; /* Allow more width for settings pages */
+  margin: 0 auto;
+}
+
+.spaceSettingsPage h1 {
+  font-size: 1.8rem;
+  margin-bottom: 20px;
+  color: #333;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.errorMessage {
+  color: #d9534f;
+  padding: 10px;
+  border: 1px solid #d9534f;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.breadcrumbs {
+  font-size: 0.9rem;
+  color: #555;
+  margin-bottom: 20px;
+}
+
+.breadcrumbs a {
+  color: #007bff;
+  text-decoration: none;
+}
+
+.breadcrumbs a:hover {
+  text-decoration: underline;
+}
+
+.breadcrumbs span {
+  margin: 0 5px;
+  color: #777;
+}
+
+.settingsContent {
+  margin-top: 20px;
+}
+
+/* Placeholder for future tab styling */
+.tabs {
+  display: flex;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #ccc;
+}
+
+.tabs button {
+  padding: 10px 15px;
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  color: #555;
+  border-bottom: 3px solid transparent; /* For active tab indication */
+}
+
+.tabs button.active {
+  color: #007bff;
+  border-bottom-color: #007bff;
+  font-weight: bold;
+}
+
+.tabs button:hover {
+  background-color: #f0f0f0;
+}

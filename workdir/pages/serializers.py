@@ -106,3 +106,25 @@ class PageDetailSerializer(serializers.ModelSerializer):
     def get_children(self, obj):
         # Page model does not have is_deleted. If it did, filter here.
         return [{'id': child.id, 'title': child.title, 'slug': child.slug} for child in obj.children.all()]
+
+
+# --- Serializer for Page Search Results ---
+class PageSearchSerializer(serializers.ModelSerializer):
+    space_key = serializers.CharField(source='space.key', read_only=True, allow_null=True)
+    space_name = serializers.CharField(source='space.name', read_only=True, allow_null=True)
+    headline = serializers.CharField(read_only=True) # Populated by SearchHeadline annotation
+    rank = serializers.FloatField(read_only=True) # Populated by SearchRank annotation
+
+    class Meta:
+        model = Page
+        fields = [
+            'id',
+            'title',
+            'slug',
+            'space_key',
+            'space_name',
+            'updated_at',
+            'headline', # Search snippet/highlight
+            'rank',     # Search rank
+        ]
+        read_only_fields = fields # All fields are read-only for search results

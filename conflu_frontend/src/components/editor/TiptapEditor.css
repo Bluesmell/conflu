@@ -1,0 +1,63 @@
+.tiptap-editor-container {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 10px;
+  background-color: #fff;
+}
+
+.tiptap-editor-title-input {
+  width: 100%;
+  padding: 12px 15px;
+  margin-bottom: 15px;
+  font-size: 1.5em;
+  font-weight: bold;
+  border: none; /* Or a very light border */
+  border-bottom: 2px solid #eee;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.tiptap-editor-title-input:focus {
+  border-bottom-color: #007bff;
+}
+
+.tiptap-editor-content .ProseMirror {
+  min-height: 300px; /* Adjust as needed */
+  padding: 10px;
+  outline: none; /* Handled by container focus or other indicators */
+  line-height: 1.6;
+}
+
+/* Basic styling for ProseMirror content - can be expanded */
+.tiptap-editor-content .ProseMirror p {
+  margin-bottom: 1em;
+}
+
+.tiptap-editor-content .ProseMirror h1,
+.tiptap-editor-content .ProseMirror h2,
+.tiptap-editor-content .ProseMirror h3 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.2;
+}
+
+.tiptap-editor-content .ProseMirror ul,
+.tiptap-editor-content .ProseMirror ol {
+  margin-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.tiptap-editor-content .ProseMirror li > p { /* Paragraphs inside list items */
+    margin-bottom: 0.5em;
+}
+
+.tiptap-editor-content .ProseMirror a {
+  color: #007bff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.tiptap-editor-content .ProseMirror:focus {
+  /* Add focus style if needed, e.g., a subtle box shadow */
+  /* box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25); */
+}

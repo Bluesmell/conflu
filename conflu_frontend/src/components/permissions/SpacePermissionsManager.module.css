@@ -1,0 +1,116 @@
+.permissionsManager {
+  padding: 20px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.permissionsManager h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 1.5rem;
+}
+
+.permissionsManager h4 {
+  margin-top: 20px;
+  margin-bottom: 10px;
+  color: #555;
+  font-size: 1.2rem;
+}
+
+.errorMessage {
+  color: #d9534f;
+  padding: 10px;
+  border: 1px solid #d9534f;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.addPermissionSection {
+  background-color: #fff;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  border: 1px solid #eee;
+}
+
+.addPermissionSection select,
+.addPermissionSection button {
+  padding: 8px 12px;
+  margin-right: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.addPermissionSection button {
+  background-color: #007bff;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.addPermissionSection button:hover {
+  background-color: #0056b3;
+}
+
+.addPermissionSection button:disabled {
+  background-color: #aaa;
+  cursor: not-allowed;
+}
+
+.checkboxGroup {
+  margin: 15px 0;
+}
+
+.checkboxGroup label {
+  margin-right: 15px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.checkboxGroup input[type="checkbox"] {
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.currentPermissions ul {
+  list-style: none;
+  padding: 0;
+}
+
+.currentPermissions li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #fff;
+  padding: 10px;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.currentPermissions li span:first-child {
+  font-weight: bold;
+}
+
+.currentPermissions li span:nth-child(2) {
+  color: #555;
+  font-size: 0.85rem;
+}
+
+.removeButton {
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.removeButton:hover {
+  background-color: #c82333;
+}

@@ -13,9 +13,15 @@ from .models import Page, PageVersion, Tag
 from .serializers import PageSerializer, PageVersionSerializer, TagSerializer, PageDetailSerializer
 from core.permissions import ExtendedDjangoObjectPermissionsOrAnonReadOnly
 
-# New imports for PageDetailView
-from rest_framework.generics import RetrieveAPIView
+# New imports for PageDetailView & PageSearchView
+from rest_framework.generics import RetrieveAPIView, ListAPIView
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
+
+# For Search
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank, SearchHeadline
+from django.db.models import F, Q
+from django.contrib.postgres.search import TrigramSimilarity # For fuzzy matching
+from .serializers import PageSearchSerializer # Import the new search serializer
 
 
 class PageViewSet(viewsets.ModelViewSet):
@@ -190,3 +196,83 @@ class PageDetailView(RetrieveAPIView):
     serializer_class = PageDetailSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     lookup_field = 'slug' # Changed from 'pk' to 'slug'
+
+
+# --- New PageSearchView ---
+class PageSearchView(ListAPIView):
+    """
+    API view for searching pages.
+    Accepts a query parameter 'q'.
+    Optionally accepts 'space_key' to filter by space.
+    """
+    serializer_class = PageSearchSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly] # Or IsAuthenticated if search is not public
+
+    def get_queryset(self):
+        query_string = self.request.query_params.get('q', '').strip()
+        space_key = self.request.query_params.get('space_key', None)
+
+        if not query_string:
+            return Page.objects.none() # No query, no results
+
+        # Basic SearchVector configuration (title and content)
+        # This assumes 'search_vector' field is already populated on the Page model
+        # and is a SearchVectorField('title', 'content_text_field_name')
+
+        search_query = SearchQuery(query_string, search_type='websearch') # 'websearch' is good for multiple terms
+
+        queryset = Page.objects.filter(is_deleted=False) # Exclude deleted pages
+
+        if space_key:
+            queryset = queryset.filter(space__key=space_key)
+
+        # Full-text search using the precomputed search_vector
+        # Annotate with rank and headline
+        # Note: SearchHeadline requires the field names used in the SearchVector definition on the model.
+        # If search_vector = SearchVector('title', 'content_json_text'), then use those here.
+        # Assuming title and a text version of content_json were used.
+        # For simplicity, we'll use 'title' and the helper function for content_json if direct field not available.
+        # However, SearchHeadline works best if the fields are directly queryable.
+        # Given our model, we search on 'search_vector' and headline on 'title' and a text version of 'content_json'.
+        # The `prosemirror_json_to_text` helper is in models.py, not directly usable in query annotations
+        # without more complex setup like custom database functions or pre-saving text content.
+        # For headline, we'll use title for now. A more advanced headline would involve content.
+
+        queryset = queryset.annotate(
+            rank=SearchRank(F('search_vector'), search_query),
+            # Basic headline on title. For content, it's more complex without a dedicated text field.
+            headline=SearchHeadline(
+                'title',  # Field to generate headline from
+                search_query,
+                start_sel='<mark>',
+                stop_sel='</mark>',
+                max_words=50,
+                min_words=25,
+                max_fragments=3,
+            )
+            # TODO: Add headline for content if a plain text version of content_json is stored or accessible
+            # For example, if you add a 'plain_content' field to Page model updated by signal:
+            # headline_content=SearchHeadline('plain_content', search_query, ...)
+            # Then combine headlines or choose one.
+        ).filter(search_vector=search_query).order_by('-rank', 'title')
+
+        # Optional: Add TrigramSimilarity for fuzzy matching if FTS results are too few or query is short
+        # This is a secondary filter or could be a fallback.
+        # For example:
+        # if not queryset.exists() and len(query_string) > 3: # Arbitrary length check
+        #     similar_pages = Page.objects.annotate(
+        #         similarity=TrigramSimilarity('title', query_string) + TrigramSimilarity(Cast('content_json', TextField()), query_string) / 2 # Rough example
+        #     ).filter(similarity__gt=0.2).order_by('-similarity') # Adjust threshold
+        #     return similar_pages
+        # This is a simplified example; integrating trigram well often means combining results or using it conditionally.
+
+        return queryset
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(name='q', description='Search query term.', required=True, type=OpenApiTypes.STR),
+            OpenApiParameter(name='space_key', description='Optional: Key of the space to filter search results by.', required=False, type=OpenApiTypes.STR),
+        ]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)

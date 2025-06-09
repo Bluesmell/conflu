@@ -1,139 +1,79 @@
 import React from 'react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import Link from '@tiptap/extension-link';
+// import appSchema from '../../editor/schema'; // We will use StarterKit for simplicity first
+import EditorToolbar from './EditorToolbar'; // Will be created next
+import './TiptapEditor.css'; // We'll create this CSS file
 
 interface TiptapEditorProps {
-  content: string; // Initial content (JSON string)
-  onChange: (newContent: string) => void; // Callback for when content changes (as JSON string)
+  content: string; // JSON string or HTML string (Tiptap handles both for initial content)
+  onChange: (newContentJson: string, newContentHtml: string) => void;
+  onTitleChange?: (newTitle: string) => void; // Optional: if title is managed on the same page
+  pageTitle?: string; // Optional: if title is managed on the same page
 }
 
-// Basic Toolbar Component
-const MenuBar: React.FC<{ editor: Editor | null }> = ({ editor }) => {
-  if (!editor) {
-    return null;
+const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, pageTitle, onTitleChange }) => {
+  let initialContent: any = content;
+  try {
+    // Attempt to parse if it's a JSON string, otherwise use as is (HTML string)
+    initialContent = JSON.parse(content);
+  } catch (e) {
+    // If parsing fails, assume it's HTML or malformed JSON that Tiptap might handle
+    // console.warn("Initial content is not a valid JSON string. Treating as HTML.", e);
   }
 
-  return (
-    <div style={{ border: '1px solid #ccc', padding: '5px', marginBottom: '5px', display: 'flex', flexWrap: 'wrap' }}>
-      <button
-        onClick={() => editor.chain().focus().toggleBold().run()}
-        disabled={!editor.can().chain().focus().toggleBold().run()}
-        className={editor.isActive('bold') ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Bold
-      </button>
-      <button
-        onClick={() => editor.chain().focus().toggleItalic().run()}
-        disabled={!editor.can().chain().focus().toggleItalic().run()}
-        className={editor.isActive('italic') ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Italic
-      </button>
-      <button
-        onClick={() => editor.chain().focus().toggleStrike().run()}
-        disabled={!editor.can().chain().focus().toggleStrike().run()}
-        className={editor.isActive('strike') ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Strike
-      </button>
-      <button
-        onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-        className={editor.isActive('heading', { level: 1 }) ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        H1
-      </button>
-      <button
-        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-        className={editor.isActive('heading', { level: 2 }) ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        H2
-      </button>
-      <button
-        onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-        className={editor.isActive('heading', { level: 3 }) ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        H3
-      </button>
-      <button
-        onClick={() => editor.chain().focus().setParagraph().run()}
-        className={editor.isActive('paragraph') ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Paragraph
-      </button>
-      <button
-        onClick={() => editor.chain().focus().toggleBulletList().run()}
-        className={editor.isActive('bulletList') ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Bullet List
-      </button>
-      <button
-        onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        className={editor.isActive('orderedList') ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Ordered List
-      </button>
-      <button
-        onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        className={editor.isActive('blockquote') ? 'is-active' : ''}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Blockquote
-      </button>
-      <button
-        onClick={() => editor.chain().focus().setHorizontalRule().run()}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Horizontal Rule
-      </button>
-      <button
-        onClick={() => editor.chain().focus().undo().run()}
-        disabled={!editor.can().undo()}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Undo
-      </button>
-      <button
-        onClick={() => editor.chain().focus().redo().run()}
-        disabled={!editor.can().redo()}
-        style={{ marginRight: '5px', marginBottom: '5px' }}
-      >
-        Redo
-      </button>
-    </div>
-  );
-};
-
-
-const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange }) => {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // Configure StarterKit options:
-        // heading: { levels: [1, 2, 3] }, // Already default
-        // history: true, // Already default and enabled
-        // You can disable extensions from StarterKit if needed:
-        // codeBlock: false,
+        // Configure StarterKit, disable things not in our initial schema if necessary
+        heading: {
+          levels: [1, 2, 3],
+        },
+        // Ensure other StarterKit defaults are mostly fine for now
+        // We want paragraph, text, bulletList, orderedList, listItem, bold, italic
+        // StarterKit includes these.
+        // blockquote: false, // Example: if we don't want blockquotes
+        // hardBreak: false, // Example: if we don't want hard breaks
+      }),
+      Link.configure({
+        openOnClick: false, // Don't open links when clicking in editor
+        autolink: true,     // Automatically detect links as you type
+        // HTMLAttributes: { // To ensure links open in new tab by default
+        //   target: '_blank',
+        //   rel: 'noopener noreferrer',
+        // },
       }),
     ],
-    content: JSON.parse(content), // Parse initial content string to JSON object for Tiptap
+    content: initialContent, // Initial content
     onUpdate: ({ editor }) => {
-      onChange(JSON.stringify(editor.getJSON())); // Output as JSON string
+      onChange(JSON.stringify(editor.getJSON()), editor.getHTML());
     },
+    // Example of applying custom styling to the editor itself
+    // editorProps: {
+    //   attributes: {
+    //     class: 'prose dark:prose-invert prose-sm sm:prose-base lg:prose-lg xl:prose-2xl p-4 focus:outline-none',
+    //   },
+    // },
   });
 
+  if (!editor) {
+    return <p>Loading editor...</p>;
+  }
+
   return (
-    <div>
-      <MenuBar editor={editor} />
-      <EditorContent editor={editor} style={{ border: '1px solid #ccc', padding: '10px', minHeight: '200px' }}/>
+    <div className="tiptap-editor-container">
+      {onTitleChange && typeof pageTitle === 'string' && (
+        <input
+          type="text"
+          value={pageTitle}
+          onChange={(e) => onTitleChange(e.target.value)}
+          placeholder="Page Title"
+          className="tiptap-editor-title-input"
+        />
+      )}
+      <EditorToolbar editor={editor} />
+      <EditorContent editor={editor} className="tiptap-editor-content" />
     </div>
   );
 };

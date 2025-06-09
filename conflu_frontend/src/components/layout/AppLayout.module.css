@@ -1,0 +1,17 @@
+.appLayout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.mainContent {
+  display: flex;
+  flex-grow: 1;
+  overflow: hidden; /* Prevent overall page scroll, individual panes can scroll */
+}
+
+.pageContent {
+  flex-grow: 1;
+  padding: 20px;
+  overflow-y: auto; /* Allow content area to scroll */
+}

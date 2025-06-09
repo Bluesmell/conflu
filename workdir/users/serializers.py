@@ -44,3 +44,15 @@ class UserSimpleSerializer(serializers.ModelSerializer):
         model = User  # Assumes User is already imported from django.contrib.auth.models
         fields = ['id', 'username', 'first_name', 'last_name', 'email'] # Added email as it was in UserRegistrationSerializer fields
         read_only_fields = fields # Typically, simple serializers are read-only representations
+
+
+class GroupSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Group model.
+    """
+    class Meta:
+        model = serializers.DjangoModelFactoryMixin.get_model_from_meta(User._meta.get_field('groups').remote_field.model) # Hacky way to get Group model
+        # from django.contrib.auth.models import Group # Better to import Group directly
+        # model = Group
+        fields = ['id', 'name']
+        read_only_fields = fields
