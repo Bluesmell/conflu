@@ -1,0 +1,28 @@
+.importPageContainer {
+  max-width: 800px;
+  margin: 40px auto;
+  padding: 20px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.pageHeader {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.pageHeader h1 {
+  font-size: 2rem;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.pageHeader p {
+  font-size: 1rem;
+  color: #666;
+}
+
+.formSection {
+  /* Styles for the section containing the form, if needed */
+}

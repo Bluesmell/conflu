@@ -13,7 +13,7 @@ export interface Page {
   // parent_page?: number | null;
   // created_at: string;
   // updated_at: string;
-  parent_page_id?: string | number | null; // Added for consistency with payload
+  parent: number | null; // ID of the parent page, matches backend PageSerializer
 }
 
 // Payload for creating a new page

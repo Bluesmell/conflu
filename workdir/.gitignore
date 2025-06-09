@@ -1,0 +1,24 @@
+# Ignore Node.js modules folder
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Django specific
+db.sqlite3
+*.log
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Other
+.DS_Store
+mediafiles_data/
+static_root/
+staticfiles_build/

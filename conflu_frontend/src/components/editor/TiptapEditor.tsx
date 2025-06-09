@@ -1,10 +1,41 @@
 import React from 'react';
-import { useEditor, EditorContent, Editor } from '@tiptap/react';
+import { useEditor, EditorContent } from '@tiptap/react'; // Removed Editor type, not directly used by component itself
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
-// import appSchema from '../../editor/schema'; // We will use StarterKit for simplicity first
-import EditorToolbar from './EditorToolbar'; // Will be created next
-import './TiptapEditor.css'; // We'll create this CSS file
+import Image from '@tiptap/extension-image';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
+import Underline from '@tiptap/extension-underline';
+import Strike from '@tiptap/extension-strike';
+import Blockquote from '@tiptap/extension-blockquote';
+import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+
+// For CodeBlockLowlight - import lowlight and languages as in RenderedPageContent
+import { lowlight } from 'lowlight/lib/core';
+import html from 'highlight.js/lib/languages/xml';
+import css from 'highlight.js/lib/languages/css';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+// Add more languages as needed and register them below
+
+import EditorToolbar from './EditorToolbar';
+import './TiptapEditor.css';
+
+// Register languages for lowlight
+lowlight.registerLanguage('html', html);
+lowlight.registerLanguage('xml', html);
+lowlight.registerLanguage('css', css);
+lowlight.registerLanguage('javascript', javascript);
+lowlight.registerLanguage('js', javascript);
+lowlight.registerLanguage('typescript', typescript);
+lowlight.registerLanguage('ts', typescript);
+lowlight.registerLanguage('python', python);
+lowlight.registerLanguage('py', python);
+// Register other languages imported above (java, csharp, etc.) if they were copied
 
 interface TiptapEditorProps {
   content: string; // JSON string or HTML string (Tiptap handles both for initial content)
@@ -26,23 +57,40 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, pageTitl
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // Configure StarterKit, disable things not in our initial schema if necessary
         heading: {
-          levels: [1, 2, 3],
+          levels: [1, 2, 3, 4, 5, 6], // All heading levels
         },
-        // Ensure other StarterKit defaults are mostly fine for now
-        // We want paragraph, text, bulletList, orderedList, listItem, bold, italic
-        // StarterKit includes these.
-        // blockquote: false, // Example: if we don't want blockquotes
-        // hardBreak: false, // Example: if we don't want hard breaks
+        // Disable StarterKit's versions if we are using more specific ones
+        // or want different configurations.
+        codeBlock: false, // Using CodeBlockLowlight instead
+        // blockquote: false, // Using Blockquote extension below
+        // horizontalRule: false, // Using HorizontalRule extension below
+        // Other StarterKit defaults like paragraph, bold, italic, lists are fine.
       }),
       Link.configure({
-        openOnClick: false, // Don't open links when clicking in editor
-        autolink: true,     // Automatically detect links as you type
-        // HTMLAttributes: { // To ensure links open in new tab by default
-        //   target: '_blank',
-        //   rel: 'noopener noreferrer',
-        // },
+        openOnClick: true, // For editor, allow opening link on click
+        autolink: true,
+        HTMLAttributes: {
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        },
+      }),
+      Image.configure({
+        // inline: false, // Default is false (block image)
+        // allowBase64: false, // Default is false
+      }),
+      Table.configure({
+        resizable: true,
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      Underline,
+      Strike,
+      Blockquote, // Use the specific extension
+      HorizontalRule, // Use the specific extension
+      CodeBlockLowlight.configure({
+        lowlight,
       }),
     ],
     content: initialContent, // Initial content
