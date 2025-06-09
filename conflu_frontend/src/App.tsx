@@ -6,9 +6,12 @@ import SpaceView from './pages/SpaceView';
 import PageView from './pages/PageView';
 import EditorView from './pages/EditorView';
 import SearchResultsView from './pages/SearchResultsView';
-import SpaceSettingsPage from './pages/SpaceSettingsPage'; // Import SpaceSettingsPage
+import SpaceSettingsPage from './pages/SpaceSettingsPage';
+import ConfluenceImportPage from './pages/ConfluenceImportPage';
+import ImportStatusPage from './pages/ImportStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
-import './App.css';
+import './App.css'; // General app styles
+import './styles/RenderedContent.css'; // Styles for Tiptap rendered HTML
 
 function App() {
   return (
@@ -27,6 +30,10 @@ function App() {
           <Route path="search" element={<SearchResultsView />} />
           {/* Space Settings Page */}
           <Route path="spaces/:spaceKey/settings" element={<SpaceSettingsPage />} />
+          {/* Import Confluence Page */}
+          <Route path="import/confluence" element={<ConfluenceImportPage />} />
+          {/* Import Status Page - ensure this route is also defined if not already */}
+          <Route path="import/status/:uploadId" element={<ImportStatusPage />} />
           {/* Optional: More specific settings routes like /spaces/:spaceKey/settings/permissions */}
           <Route path="*" element={<NotFoundPage />} />
         </Route>

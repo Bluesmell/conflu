@@ -1,0 +1,194 @@
+/* Styles for content rendered by Tiptap's generateHTML */
+
+/* Apply basic typography and layout */
+.tiptap-content {
+  line-height: 1.6;
+  color: #333;
+  font-family: sans-serif; /* Or your preferred font stack */
+}
+
+.tiptap-content h1,
+.tiptap-content h2,
+.tiptap-content h3,
+.tiptap-content h4,
+.tiptap-content h5,
+.tiptap-content h6 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.tiptap-content p {
+  margin-bottom: 1em;
+}
+
+.tiptap-content ul,
+.tiptap-content ol {
+  margin-left: 1.5em;
+  margin-bottom: 1em;
+  padding-left: 1.5em; /* Ensure padding for list markers */
+}
+
+.tiptap-content li > p {
+  margin-bottom: 0.25em; /* Tighter spacing for paragraphs inside list items */
+}
+
+.tiptap-content blockquote {
+  margin-left: 1em;
+  padding-left: 1em;
+  border-left: 3px solid #ccc;
+  color: #555;
+  font-style: italic;
+}
+
+.tiptap-content hr {
+  border: none;
+  border-top: 1px solid #eee;
+  margin: 2em 0;
+}
+
+.tiptap-content a {
+  color: #007bff;
+  text-decoration: underline;
+}
+
+.tiptap-content a:hover {
+  color: #0056b3;
+}
+
+/* Table Styling */
+.tiptap-content table {
+  width: 100%; /* Or auto, depending on preference */
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.9em;
+  border: 1px solid #ccc;
+}
+
+.tiptap-content th,
+.tiptap-content td {
+  border: 1px solid #ccc;
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+
+.tiptap-content th {
+  background-color: #f0f0f0;
+  font-weight: bold;
+}
+
+.tiptap-content tr:nth-child(even) {
+  /* background-color: #f9f9f9; */ /* Optional: zebra striping for rows */
+}
+
+/* Image Styling */
+.tiptap-content img {
+  max-width: 100%;
+  height: auto;
+  display: block; /* Or inline, depending on schema/preference */
+  margin: 1em auto; /* Center block images */
+  border-radius: 4px; /* Optional: slight rounding */
+}
+
+/* Code Block and Inline Code Styling */
+.tiptap-content pre {
+  background: #f5f5f5; /* Default background for code blocks */
+  color: #333;       /* Default text color for code blocks */
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  padding: 1em;
+  border-radius: 4px;
+  overflow-x: auto; /* Allow horizontal scrolling for long lines */
+  margin: 1em 0;
+}
+
+.tiptap-content pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit; /* Code tag inside pre should inherit pre's font size */
+  color: inherit;
+}
+
+.tiptap-content code:not(pre code) { /* Inline code */
+  background: #f0f0f0;
+  color: #c7254e; /* Example color for inline code, adjust as needed */
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-size: 0.85em;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+}
+
+
+/*
+  Syntax Highlighting Theme (e.g., GitHub Dark for highlight.js)
+  You should import a theme from 'highlight.js/styles'. For example:
+  @import 'highlight.js/styles/github-dark.css'; (if using PostCSS import or similar)
+  Or copy-paste the theme's CSS rules directly here.
+  The styles below are a *subset* of a typical theme to demonstrate.
+  For a full theme, copy from highlight.js/styles/<theme-name>.css
+*/
+
+/* Example: Basic highlight.js styling (replace with a full theme) */
+.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 0.5em;
+  background: #2b2b2b; /* Dark background example */
+  color: #f8f8f2;   /* Light text example */
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #d4d0ab;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-subst {
+  color: #f92672; /* Pink/Red */
+}
+
+.hljs-number,
+.hljs-string, /* Includes strings in quotes */
+.hljs-regexp,
+.hljs-variable,
+.hljs-template-variable {
+  color: #ae81ff; /* Purple */
+}
+
+.hljs-title, /* Class names, function names */
+.hljs-name, /* Tag names, attribute names */
+.hljs-section,
+.hljs-built_in,
+.hljs-type { /* Data types */
+  color: #a6e22e; /* Green */
+}
+
+.hljs-attribute, /* HTML attributes */
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link,
+.hljs-meta { /* Meta keywords */
+  color: #e6db74; /* Yellow */
+}
+
+.hljs-params { /* Function parameters */
+  color: #fd971f; /* Orange */
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+/* Add more specific styles from your chosen highlight.js theme */
+/* For example, if using github-dark.css:
+   .hljs-addition { background-color: #144212; color: #196819; }
+   .hljs-deletion { background-color: #600; color: #c00; }
+   ... and so on for all tokens defined in the theme.
+*/

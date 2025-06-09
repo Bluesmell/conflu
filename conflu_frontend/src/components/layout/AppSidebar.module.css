@@ -53,14 +53,61 @@
   margin-top: 5px;
 }
 
-.appSidebar li.activeSubItem > a {
-    background-color: #d4eaff;
-    color: #0056b3;
-    font-weight: normal;
+/* Styles for PageTreeItem specifically */
+.pageTreeItem {
+  /* paddingLeft is set via inline style in the component for dynamic indentation */
+  margin-bottom: 4px; /* Slightly reduce margin for tree items */
 }
 
-.appSidebar li.activeSubItem > a:hover {
-    background-color: #c0daff;
+.pageLinkContainer {
+  display: flex;
+  align-items: center;
+}
+
+.pageLinkContainer a {
+  flex-grow: 1; /* Allow link to take up space */
+  padding: 3px 5px; /* Adjust padding for tree links */
+  font-size: 0.9rem; /* Slightly smaller font for tree items */
+}
+
+.toggleIcon {
+  cursor: pointer;
+  margin-right: 5px;
+  padding: 0 5px; /* Make it easier to click */
+  font-size: 0.8rem; /* Smaller icon */
+  user-select: none; /* Prevent text selection on click */
+  width: 15px; /* Fixed width for alignment */
+  display: inline-block;
+  text-align: center;
+}
+
+.pageSubTree {
+  list-style: none;
+  padding-left: 0; /* Indentation is handled by PageTreeItem's level prop */
+  margin-top: 2px;
+}
+
+.pageTreeRoot {
+  /* padding-left: 0; */ /* Root UL for pages already has no padding from .appSidebar ul */
+}
+
+
+/* Active state for page links in the tree */
+.activeSubItem a { /* Targets the <a> tag directly within an active item */
+  background-color: #cce5ff; /* Lighter blue for active tree item */
+  color: #004085; /* Darker blue text */
+  font-weight: bold;
+}
+
+.activeSubItem a:hover {
+  background-color: #b8daff;
+}
+
+
+.appSidebar li.active > a { /* For top-level space links */
+  background-color: #007bff;
+  color: white;
+  font-weight: bold;
 }
 
 .appSidebar li.active > a:hover {

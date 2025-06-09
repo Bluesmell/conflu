@@ -1,4 +1,16 @@
+// Basic Tiptap schema
+// Read more about schemas here: https://tiptap.dev/docs/editor/schema
+// Note: This schema is for direct ProseMirror usage if needed.
+// For Tiptap editor instances, you typically configure extensions directly.
+// However, generateHTML can use a schema derived from extensions or a manually defined one.
+
 import { Schema } from '@tiptap/pm/model';
+
+const pDOM = ['p', 0] as const;
+const blockquoteDOM = ['blockquote', 0] as const;
+const hrDOM = ['hr'] as const;
+const preDOM = ['pre', ['code', 0]] as const; // Code block with nested code tag
+const brDOM = ['br'] as const;
 
 export const appSchema = new Schema({
   nodes: {
@@ -9,12 +21,19 @@ export const appSchema = new Schema({
       content: 'inline*',
       group: 'block',
       parseDOM: [{ tag: 'p' }],
-      toDOM() {
-        return ['p', 0];
-      },
+      toDOM() { return pDOM; },
     },
-    text: {
-      group: 'inline',
+    blockquote: {
+      content: 'block+',
+      group: 'block',
+      defining: true,
+      parseDOM: [{ tag: 'blockquote' }],
+      toDOM() { return blockquoteDOM; },
+    },
+    horizontalRule: { // Corrected name to match Tiptap extension
+      group: 'block',
+      parseDOM: [{ tag: 'hr' }],
+      toDOM() { return hrDOM; },
     },
     heading: {
       attrs: { level: { default: 1 } },
@@ -25,77 +44,158 @@ export const appSchema = new Schema({
         { tag: 'h1', attrs: { level: 1 } },
         { tag: 'h2', attrs: { level: 2 } },
         { tag: 'h3', attrs: { level: 3 } },
-        // Add h4, h5, h6 if needed later
+        { tag: 'h4', attrs: { level: 4 } },
+        { tag: 'h5', attrs: { level: 5 } },
+        { tag: 'h6', attrs: { level: 6 } },
       ],
+      toDOM(node) { return [`h${node.attrs.level}`, 0]; },
+    },
+    codeBlock: { // Corrected name
+      content: 'text*', // Should primarily contain text
+      marks: '', // No marks within code blocks typically
+      group: 'block',
+      code: true,
+      defining: true,
+      attrs: { language: { default: null } },
+      parseDOM: [{ tag: 'pre', preserveWhitespace: 'full', getAttrs: dom => ({ language: (dom as HTMLElement).getAttribute('data-language') || null }) }],
       toDOM(node) {
-        return [`h${node.attrs.level}`, 0];
+        return ['pre', node.attrs.language ? { 'data-language': node.attrs.language, class: `language-${node.attrs.language}` } : {}, ['code', 0]];
       },
     },
-    bulletList: {
-      content: 'listItem+',
-      group: 'block',
-      parseDOM: [{ tag: 'ul' }],
-      toDOM() {
-        return ['ul', 0];
+    text: {
+      group: 'inline',
+    },
+    image: {
+      inline: false, // Images are typically block elements in this context, but can be inline too
+      group: 'block', // Or inline, depending on desired behavior. Let's assume block for now.
+      attrs: {
+        src: { default: null },
+        alt: { default: null },
+        title: { default: null },
       },
+      draggable: true,
+      parseDOM: [{
+        tag: 'img[src]',
+        getAttrs: dom => ({
+          src: (dom as HTMLElement).getAttribute('src'),
+          alt: (dom as HTMLElement).getAttribute('alt'),
+          title: (dom as HTMLElement).getAttribute('title'),
+        }),
+      }],
+      toDOM(node) { return ['img', node.attrs]; },
+    },
+    hardBreak: { // Corrected name
+      inline: true,
+      group: 'inline',
+      selectable: false,
+      parseDOM: [{ tag: 'br' }],
+      toDOM() { return brDOM; },
     },
     orderedList: {
       content: 'listItem+',
       group: 'block',
-      parseDOM: [{ tag: 'ol' }],
-      toDOM() {
-        return ['ol', 0];
+      attrs: { order: { default: 1 } },
+      parseDOM: [{
+        tag: 'ol',
+        getAttrs: dom => ({
+          order: (dom as HTMLElement).hasAttribute('start') ? parseInt((dom as HTMLElement).getAttribute('start') || '1', 10) : 1,
+        }),
+      }],
+      toDOM(node) {
+        return node.attrs.order === 1 ? ['ol', 0] : ['ol', { start: node.attrs.order }, 0];
       },
     },
+    bulletList: { // Corrected name
+      content: 'listItem+',
+      group: 'block',
+      parseDOM: [{ tag: 'ul' }],
+      toDOM() { return ['ul', 0]; },
+    },
     listItem: {
-      content: 'paragraph block*', // Allow paragraphs and other blocks within list items
-      defining: true,
+      content: 'paragraph block*', // Changed from 'block+' to allow paragraphs and other blocks. Tiptap default is 'paragraph (paragraph | block)*'
+      defining: true, // Important for copy-paste and schema resolution
       parseDOM: [{ tag: 'li' }],
-      toDOM() {
-        return ['li', 0];
-      },
+      toDOM() { return ['li', 0]; },
+    },
+    // Table related nodes
+    table: {
+        content: 'tableRow+',
+        tableRole: 'table',
+        isolating: true,
+        group: 'block',
+        parseDOM: [{tag: 'table'}],
+        toDOM() { return ['table', ['tbody', 0]]; }, // Ensure tbody for structure
+    },
+    tableRow: {
+        content: '(tableCell | tableHeader)+',
+        tableRole: 'row',
+        parseDOM: [{tag: 'tr'}],
+        toDOM() { return ['tr', 0]; },
+    },
+    tableCell: {
+        content: 'block+', // Allow block content within cells
+        tableRole: 'cell',
+        isolating: true,
+        parseDOM: [{tag: 'td'}],
+        toDOM() { return ['td', 0]; },
+    },
+    tableHeader: {
+        content: 'block+',
+        tableRole: 'header_cell',
+        isolating: true,
+        parseDOM: [{tag: 'th'}],
+        toDOM() { return ['th', 0]; },
     },
   },
   marks: {
-    bold: {
-      parseDOM: [
-        { tag: 'strong' },
-        { style: 'font-weight', getAttrs: (value: string | NodeJS.StyleDeclaration) => typeof value === 'string' && /^(bold(er)?|[5-9]\d{2,})$/.test(value) && null },
-      ],
-      toDOM() {
-        return ['strong', 0];
-      },
-    },
-    italic: {
-      parseDOM: [
-        { tag: 'em' },
-        { tag: 'i' },
-        { style: 'font-style=italic' },
-      ],
-      toDOM() {
-        return ['em', 0];
-      },
-    },
     link: {
       attrs: {
         href: {},
         title: { default: null },
-        target: { default: '_blank'} // Default to open in new tab
+        target: { default: '_blank' }, // Default to open in new tab
       },
       inclusive: false,
+      parseDOM: [{
+        tag: 'a[href]',
+        getAttrs: dom => ({
+          href: (dom as HTMLElement).getAttribute('href'),
+          title: (dom as HTMLElement).getAttribute('title'),
+          target: (dom as HTMLElement).getAttribute('target'),
+        }),
+      }],
+      toDOM(node) { return ['a', node.attrs, 0]; },
+    },
+    bold: {
       parseDOM: [
-        {
-          tag: 'a[href]',
-          getAttrs: (dom: HTMLElement | string) => {
-            if (typeof dom === 'string') return {}; // Should not happen with 'a[href]'
-            return { href: dom.getAttribute('href'), title: dom.getAttribute('title'), target: dom.getAttribute('target') };
-          },
-        },
+        { tag: 'strong' },
+        { tag: 'b', getAttrs: node => (node as HTMLElement).style.fontWeight !== 'normal' && null },
+        { style: 'font-weight', getAttrs: value => /^(bold(er)?|[5-9]\d{2,})$/.test(value as string) && null },
       ],
-      toDOM(node) {
-        const { href, title, target } = node.attrs;
-        return ['a', { href, title, target }, 0];
-      },
+      toDOM() { return ['strong', 0]; },
+    },
+    italic: {
+      parseDOM: [
+        { tag: 'i' },
+        { tag: 'em' },
+        { style: 'font-style=italic' },
+      ],
+      toDOM() { return ['em', 0]; },
+    },
+    underline: { // Added
+      parseDOM: [{tag: 'u'}, {style: 'text-decoration=underline'}],
+      toDOM() { return ['u', 0]; },
+    },
+    strike: { // Added (strikethrough)
+      parseDOM: [
+        {tag: 's'}, {tag: 'del'}, {tag: 'strike'},
+        {style: 'text-decoration=line-through'},
+        {style: 'text-decoration-line=line-through'} // More specific CSS
+      ],
+      toDOM() { return ['s', 0]; }, // Using <s> for simplicity
+    },
+    code: { // Inline code
+      parseDOM: [{ tag: 'code' }],
+      toDOM() { return ['code', 0]; },
     },
   },
 });
