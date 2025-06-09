@@ -98,6 +98,7 @@ The `conflu_frontend` React application is located in the `conflu_frontend/` dir
     ```bash
     npm install
     ```
+    If you have pulled recent changes or are setting up for the first time, ensure you run this command to install all required dependencies as defined in `package.json`.
 
 3.  **Run Development Server:**
     ```bash
