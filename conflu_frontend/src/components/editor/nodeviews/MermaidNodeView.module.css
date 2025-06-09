@@ -1,0 +1,95 @@
+.mermaidNodeWrapper {
+  border: 1px solid #ddd;
+  padding: 15px;
+  margin: 10px 0;
+  background-color: #fdfdfd;
+  border-radius: 4px;
+}
+
+.controls {
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.controls label {
+  font-weight: bold;
+  color: #333;
+}
+
+.syntaxInput {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+  resize: vertical; /* Allow vertical resize */
+  min-height: 80px;
+}
+
+.syntaxInput.syntaxError {
+  border-color: #d9534f; /* Red border for syntax errors */
+  outline-color: #d9534f; /* Ensure focus outline also indicates error if possible */
+}
+
+.previewHeader {
+  font-weight: bold;
+  margin-top: 15px;
+  margin-bottom: 5px;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.diagramPreview {
+  background-color: #fff; /* White background for the diagram itself */
+  padding: 10px;
+  border: 1px solid #eee;
+  border-radius: 3px;
+  min-height: 50px; /* Minimum height for the preview area */
+  display: flex; /* For centering mermaid content if it's smaller */
+  justify-content: center; /* Center mermaid diagram if it's not full width */
+  align-items: center;
+  overflow: auto; /* Add scrollbars if diagram is too large */
+}
+
+.diagramPreview svg {
+  /* Ensure SVG scales nicely, though Mermaid usually handles this */
+  max-width: 100%;
+  height: auto;
+  display: block; /* Remove extra space below SVG */
+}
+
+.errorMessagePreview {
+  color: #d9534f;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  padding: 8px;
+  border-radius: 3px;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+  white-space: pre-wrap; /* Show error message clearly */
+}
+
+.validationMessage {
+  margin-top: 5px;
+  padding: 5px;
+  font-size: 0.8rem;
+  border-radius: 3px;
+}
+
+/* Example validation message styling (adjust as needed) */
+.validationMessage.valid {
+  color: green;
+  background-color: #e6ffed;
+}
+
+.validationMessage.invalid {
+  color: red;
+  background-color: #ffe6e6;
+}

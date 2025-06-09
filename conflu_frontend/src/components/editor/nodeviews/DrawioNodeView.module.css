@@ -1,0 +1,58 @@
+.drawioNodeWrapper {
+  border: 2px dashed #007bff; /* Blue dashed border */
+  padding: 10px;
+  margin: 10px 0;
+  background-color: #f0f8ff; /* Light blue background */
+  border-radius: 4px;
+  position: relative; /* For positioning the edit button */
+  min-height: 100px; /* Ensure it's visible even if empty */
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Center placeholder content */
+  justify-content: center; /* Center placeholder content */
+}
+
+.drawioNodeWrapper.ProseMirror-selectednode {
+  outline: 2px solid #0056b3; /* Darker blue outline when selected */
+  box-shadow: 0 0 5px rgba(0, 86, 179, 0.5);
+}
+
+.contentArea {
+  width: 100%;
+  text-align: center; /* Center placeholder text */
+  color: #555;
+}
+
+.contentArea pre { /* Styling for the XML snippet in placeholder */
+  font-size: 0.7em;
+  max-height: 50px;
+  overflow: hidden;
+  text-align: left;
+  white-space: pre-wrap;
+  background-color: #e9ecef;
+  padding: 5px;
+  border-radius: 3px;
+  color: #333;
+}
+
+
+.editButton {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.drawioNodeWrapper:hover .editButton,
+.editButton:hover,
+.editButton:focus {
+  opacity: 1;
+}

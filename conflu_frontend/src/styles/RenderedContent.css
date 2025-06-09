@@ -86,10 +86,52 @@
 .tiptap-content img {
   max-width: 100%;
   height: auto;
-  display: block; /* Or inline, depending on schema/preference */
-  margin: 1em auto; /* Center block images */
+  /* display: block; default, but alignment will override */
+  /* margin: 1em auto; default centering, overridden by alignment */
   border-radius: 4px; /* Optional: slight rounding */
 }
+
+/* Image alignment styles using data-align attribute */
+.tiptap-content img[data-align="left"],
+.tiptap-image[data-align="left"] { /* Also target class if Tiptap extension adds it */
+  float: left;
+  margin-right: 1em;
+  margin-bottom: 0.5em; /* Adjust spacing */
+  margin-left: 0; /* Clear other margins */
+}
+
+.tiptap-content img[data-align="right"],
+.tiptap-image[data-align="right"] {
+  float: right;
+  margin-left: 1em;
+  margin-bottom: 0.5em;
+  margin-right: 0;
+}
+
+.tiptap-content img[data-align="center"],
+.tiptap-image[data-align="center"] {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 1em;
+  margin-bottom: 1em;
+  float: none; /* Ensure no float */
+}
+
+.tiptap-content img[data-align="none"],
+.tiptap-image[data-align="none"] {
+  display: block; /* Or initial, depending on desired default without alignment */
+  margin: 1em auto; /* Default to centered or no specific margin */
+  float: none;
+}
+
+/* Clearfix for containers with floated images if needed, though modern layouts might not require this often */
+/* .tiptap-content p:after, .tiptap-content div:after {
+  content: "";
+  display: table;
+  clear: both;
+} */
+
 
 /* Code Block and Inline Code Styling */
 .tiptap-content pre {

@@ -72,17 +72,49 @@ export const appSchema = new Schema({
         src: { default: null },
         alt: { default: null },
         title: { default: null },
+        align: { default: 'none' }, // 'none', 'left', 'center', 'right'
+        width: { default: null },
+        height: { default: null },
       },
       draggable: true,
       parseDOM: [{
         tag: 'img[src]',
-        getAttrs: dom => ({
-          src: (dom as HTMLElement).getAttribute('src'),
-          alt: (dom as HTMLElement).getAttribute('alt'),
-          title: (dom as HTMLElement).getAttribute('title'),
-        }),
+        getAttrs: domNode => {
+          const dom = domNode as HTMLElement;
+          return {
+            src: dom.getAttribute('src'),
+            alt: dom.getAttribute('alt'),
+            title: dom.getAttribute('title'),
+            align: dom.getAttribute('data-align') || dom.style.float || (dom.style.display === 'block' && dom.style.marginLeft === 'auto' ? 'center' : 'none'),
+            width: dom.getAttribute('width') || dom.style.width || null,
+            height: dom.getAttribute('height') || dom.style.height || null,
+          };
+        },
       }],
-      toDOM(node) { return ['img', node.attrs]; },
+      toDOM(node) {
+        const { src, alt, title, align, width, height } = node.attrs;
+        const attrs: any = { src, alt, title };
+        if (width) attrs.width = width;
+        if (height) attrs.height = height;
+
+        let style = '';
+        if (align === 'left') {
+          attrs['data-align'] = 'left';
+          // style = 'float: left; margin-right: 10px; margin-bottom: 10px;';
+        } else if (align === 'right') {
+          attrs['data-align'] = 'right';
+          // style = 'float: right; margin-left: 10px; margin-bottom: 10px;';
+        } else if (align === 'center') {
+          attrs['data-align'] = 'center';
+          // style = 'display: block; margin-left: auto; margin-right: auto; margin-bottom: 10px;';
+        }
+        // if (style) attrs.style = style; // Inline styles can be problematic, prefer classes or data-attrs
+
+        // For centered images, a wrapper div might be better for styling if float is not used.
+        // Tiptap's HTMLAttributes system on the extension is usually preferred for class/style manipulation.
+        // This toDOM is a direct ProseMirror schema version.
+        return ['img', attrs];
+      },
     },
     hardBreak: { // Corrected name
       inline: true,
@@ -146,6 +178,83 @@ export const appSchema = new Schema({
         parseDOM: [{tag: 'th'}],
         toDOM() { return ['th', 0]; },
     },
+    // FallbackMacroPlaceholder node
+    fallbackMacroPlaceholder: {
+      group: 'block',
+      atom: true,
+      attrs: {
+        macroName: { default: 'Unknown Macro' },
+        fallbackMacroId: { default: null },
+      },
+      draggable: true,
+      toDOM: node => [
+        'div',
+        {
+          'data-type': 'fallback-macro-placeholder',
+          'data-macro-name': node.attrs.macroName,
+          'data-fallback-id': String(node.attrs.fallbackMacroId),
+          class: 'fallback-macro-node ProseMirror-widget',
+        },
+        `[Unsupported Macro: ${node.attrs.macroName}]`
+      ],
+      parseDOM: [
+        {
+          tag: 'div[data-type="fallback-macro-placeholder"]',
+          getAttrs: dom => {
+            const element = dom as HTMLElement;
+            return {
+              macroName: element.getAttribute('data-macro-name') || 'Unknown Macro',
+              fallbackMacroId: parseInt(element.getAttribute('data-fallback-id') || '0', 10) || null,
+            };
+          },
+        },
+      ],
+    },
+    drawioDiagram: {
+      group: 'block',
+      atom: true,
+      draggable: true,
+      attrs: {
+        xml: { default: '' },
+        // placeholderId can be used to temporarily store a unique ID for the diagram
+        // if it's created client-side and needs to be linked to an image preview before saving.
+        // For Draw.io, the XML itself is the core data.
+        // Previews are usually generated as SVGs or PNGs from the XML.
+      },
+      toDOM: node => [
+        'div',
+        {
+          'data-type': 'drawio-diagram',
+          // Store XML in a data attribute if it's not too large,
+          // or rely on the NodeView to manage it and just render a placeholder here.
+          // For simplicity in schema, often just a placeholder is rendered here.
+          // The actual content (image preview) is handled by the NodeView.
+          // 'data-xml': node.attrs.xml, // Potentially very large
+        },
+        // Fallback content for SSR or if NodeView doesn't load:
+        '[Draw.io Diagram - Requires JavaScript to view and edit]'
+      ],
+      parseDOM: [
+        {
+          tag: 'div[data-type="drawio-diagram"]',
+          getAttrs: domNode => {
+            const dom = domNode as HTMLElement;
+            // If XML was stored in a data attribute (not recommended for large XML):
+            // const xml = dom.getAttribute('data-xml');
+            // If XML is stored as text content inside a hidden <pre> tag (like Mermaid extension):
+            const preElement = dom.querySelector('pre[data-drawio-xml]');
+            const xml = preElement ? preElement.textContent : '';
+            return { xml: xml || '' };
+          },
+        },
+        // Optional: if Draw.io diagrams are saved as images with specific class/attributes
+        // and XML is embedded in a data attribute on the image.
+        // {
+        //   tag: 'img[data-drawio-xml]',
+        //   getAttrs: dom => ({ xml: (dom as HTMLElement).getAttribute('data-drawio-xml') })
+        // }
+      ],
+    }
   },
   marks: {
     link: {
