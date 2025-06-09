@@ -35,7 +35,7 @@ INSTALLED_APPS = [
 
     'allauth',
     'allauth.account',
-    # 'allauth.socialaccount',
+    'allauth.socialaccount',
 
     'rest_framework',
     'rest_framework.authtoken', # Required by dj-rest-auth if not using JWT for it

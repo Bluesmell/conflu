@@ -9,8 +9,11 @@ from .utils import extract_html_and_metadata_from_zip, cleanup_temp_extraction_d
 from .parser import parse_html_file_basic, parse_confluence_metadata_for_hierarchy
 from .converter import convert_html_to_prosemirror_json
 
-from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+import uuid
+from django.urls import reverse
+from django.contrib.auth.models import User # Keep for ConfluenceUploadModelTests user
+from django.contrib.auth import get_user_model
+from rest_framework.test import APIClient # Keep for ConfluenceImportViewTests
 from rest_framework import status
 from unittest.mock import patch
 
@@ -148,31 +151,53 @@ class ConfluenceUploadModelTests(TestCase):
         self.assertEqual(upload_with_target.target_workspace, ws)
         self.assertEqual(upload_with_target.target_space, space)
 
+    def test_confluence_upload_initial_progress_fields_default(self):
+        # self.user and self.dummy_file are from this class's setUp
+        upload = ConfluenceUpload.objects.create(user=self.user, file=self.dummy_file)
+        self.assertEqual(upload.pages_succeeded_count, 0)
+        self.assertEqual(upload.pages_failed_count, 0)
+        self.assertEqual(upload.attachments_succeeded_count, 0)
+        # Model fields are CharField/TextField with null=True, blank=True, no explicit default="".
+        # So, they will be None in Python if not set.
+        self.assertIsNone(upload.progress_message)
+        self.assertIsNone(upload.error_details)
 
-class ConfluenceImportViewTests(TestCase):
+class ConfluenceImportViewTests(TestCase): # APITestCase is also fine, TestCase is base for DRF tests
     def setUp(self):
-        self.user = User.objects.create_user(username='view_testuser_targets', password='password')
-        self.client = APIClient()
-        self.client.force_authenticate(user=self.user)
-        self.import_url = "/api/v1/io/import/confluence/"
+        UserModel = get_user_model()
+        # Unique username for each test run, though TestCase should isolate DBs.
+        self.user = UserModel.objects.create_user(username=f"view_user_{uuid.uuid4().hex[:6]}", password="password_test")
 
-        if Workspace:
-            self.workspace1 = Workspace.objects.create(name="WS1 for View Test", owner=self.user)
-            if Space:
-                self.space1_ws1 = Space.objects.create(name="Space1 in WS1", key="S1W1VW", workspace=self.workspace1, owner=self.user)
-            self.workspace2 = Workspace.objects.create(name="WS2 for View Test", owner=self.user)
-            if Space:
-                self.space1_ws2 = Space.objects.create(name="Space1 in WS2", key="S1W2VW", workspace=self.workspace2, owner=self.user)
+        self.client = APIClient() # Create an instance of APIClient
+        self.client.force_authenticate(user=self.user)
+        self.import_url = reverse("importer:confluence-import")
+
+        if Workspace and Space:
+            # Use unique names to prevent clashes if DB state persists unexpectedly across tests
+            self.workspace1 = Workspace.objects.create(name=f"ViewTestWS1_{uuid.uuid4().hex[:4]}", owner=self.user)
+            self.workspace2 = Workspace.objects.create(name=f"ViewTestWS2_{uuid.uuid4().hex[:4]}", owner=self.user)
+            self.space1_ws1 = Space.objects.create(name="S1W1Test", key=f"S1W1T{uuid.uuid4().hex[:4]}", workspace=self.workspace1, owner=self.user)
+            self.space1_ws2 = Space.objects.create(name="S1W2Test", key=f"S1W2T{uuid.uuid4().hex[:4]}", workspace=self.workspace2, owner=self.user)
         else:
-            self.workspace1 = None
-            self.space1_ws1 = None
-            self.workspace2 = None
-            self.space1_ws2 = None
+            self.workspace1 = self.workspace2 = self.space1_ws1 = self.space1_ws2 = None
 
     def tearDown(self):
+        # Clean up ConfluenceUploads
         ConfluenceUpload.objects.all().delete()
-        if hasattr(self, 'workspace1') and self.workspace1: self.workspace1.delete()
-        if hasattr(self, 'workspace2') and self.workspace2: self.workspace2.delete()
+
+        # Clean up Workspaces and Spaces if they were created
+        if hasattr(self, 'workspace1') and self.workspace1:
+            self.workspace1.delete()
+        if hasattr(self, 'workspace2') and self.workspace2:
+            self.workspace2.delete()
+        # Spaces might be cascade deleted if Workspace.delete() handles it.
+        # If not, or to be explicit:
+        # if hasattr(self, 'space1_ws1') and self.space1_ws1: self.space1_ws1.delete()
+        # if hasattr(self, 'space1_ws2') and self.space1_ws2: self.space1_ws2.delete()
+
+        # Clean up the user
+        if hasattr(self, 'user') and self.user:
+            self.user.delete()
 
     @patch('importer.views.import_confluence_space')
     def test_post_request_triggers_import_task(self, mock_import_task):
@@ -669,12 +694,18 @@ class ConfluenceImportTaskTests(TestCase):
         zip_path = self._create_dummy_confluence_zip("t1.zip", html_files_data=html_data, metadata_xml_content=metadata_xml)
         with open(zip_path, 'rb') as f: upload_file = SimpleUploadedFile(name="t1.zip",content=f.read(),content_type='application/zip')
         upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file) # No target specified, uses fallback
-        msg = import_confluence_space(confluence_upload_id=upload_record.id)
-        upload_record.refresh_from_db(); self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        import_confluence_space(confluence_upload_id=upload_record.id)
+        upload_record.refresh_from_db()
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        self.assertEqual(upload_record.pages_succeeded_count, 1)
+        self.assertEqual(upload_record.pages_failed_count, 0)
+        self.assertEqual(upload_record.attachments_succeeded_count, 0)
+        self.assertTrue(upload_record.progress_message.startswith("Import completed."))
+        self.assertTrue(upload_record.error_details == "" or upload_record.error_details is None)
         # Page should be in the default space used by fallback logic
         p = Page.objects.get(original_confluence_id="123", space=self.space_default_in_ws_default)
         self.assertEqual(p.title, "T1"); self.assertIn("C1", p.content_json['content'][0]['content'][0]['text'])
-        self.assertEqual(Attachment.objects.count(), 0); self.assertIn("Pages created: 1", msg)
+        self.assertEqual(Attachment.objects.count(), 0)
 
     def test_import_task_page_with_attachments_and_embedded_images(self):
         if not self.space_default_in_ws_default: self.skipTest("Default Space not available.")
@@ -686,7 +717,13 @@ class ConfluenceImportTaskTests(TestCase):
         with open(zip_path,'rb') as f: upload_file=SimpleUploadedFile("t_img.zip",f.read(),'application/zip')
         upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file) # No target, uses fallback
         import_confluence_space(upload_record.id)
-        upload_record.refresh_from_db(); self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        upload_record.refresh_from_db()
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        self.assertEqual(upload_record.pages_succeeded_count, 1)
+        self.assertEqual(upload_record.pages_failed_count, 0)
+        self.assertEqual(upload_record.attachments_succeeded_count, 2) # Expect 2 attachments
+        self.assertTrue(upload_record.progress_message.startswith("Import completed."))
+        self.assertTrue(upload_record.error_details == "" or upload_record.error_details is None)
         page = Page.objects.get(original_confluence_id="800", space=self.space_default_in_ws_default) # Check in default space
         self.assertEqual(Attachment.objects.filter(page=page).count(), 2)
         # ... (rest of assertions for attachments and image src)
@@ -697,7 +734,14 @@ class ConfluenceImportTaskTests(TestCase):
         with open(zip_path,'rb') as f: upload_file=SimpleUploadedFile("no_html.zip",f.read(),'application/zip')
         upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file)
         import_confluence_space(upload_record.id)
-        upload_record.refresh_from_db(); self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_FAILED)
+        upload_record.refresh_from_db()
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_FAILED)
+        self.assertEqual(upload_record.pages_succeeded_count, 0)
+        self.assertEqual(upload_record.pages_failed_count, 0) # No pages attempted from metadata
+        self.assertEqual(upload_record.attachments_succeeded_count, 0)
+        self.assertTrue("failed" in upload_record.progress_message.lower() or "error" in upload_record.progress_message.lower())
+        self.assertTrue(bool(upload_record.error_details), "Error details should be populated on failure.")
+        self.assertIn("No HTML files found", upload_record.error_details)
         self.assertEqual(Page.objects.count(), 0)
 
     def test_import_task_with_page_hierarchy(self):
@@ -708,7 +752,13 @@ class ConfluenceImportTaskTests(TestCase):
         with open(zip_path,'rb') as f: upload_file=SimpleUploadedFile("th.zip",f.read(),'application/zip')
         upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file) # No target, uses fallback
         import_confluence_space(upload_record.id)
-        upload_record.refresh_from_db(); self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        upload_record.refresh_from_db()
+        self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        self.assertEqual(upload_record.pages_succeeded_count, 2) # Parent and Child
+        self.assertEqual(upload_record.pages_failed_count, 0)
+        self.assertEqual(upload_record.attachments_succeeded_count, 0)
+        self.assertTrue(upload_record.progress_message.startswith("Import completed."))
+        self.assertTrue(upload_record.error_details == "" or upload_record.error_details is None)
         self.assertEqual(Page.objects.count(), 2)
         p_h = Page.objects.get(original_confluence_id="100",space=self.space_default_in_ws_default) # Check in default space
         c_h1 = Page.objects.get(original_confluence_id="101",space=self.space_default_in_ws_default) # Check in default space
@@ -722,10 +772,16 @@ class ConfluenceImportTaskTests(TestCase):
         zip_path = self._create_dummy_confluence_zip("test_stray_html.zip", html_files_data=html_data, metadata_xml_content=sample_metadata_xml)
         upload_file = SimpleUploadedFile(name=os.path.basename(zip_path), content=open(zip_path, 'rb').read(), content_type='application/zip')
         upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file) # Uses fallback
-        result_message = import_confluence_space(confluence_upload_id=upload_record.id)
+        import_confluence_space(confluence_upload_id=upload_record.id)
         upload_record.refresh_from_db()
         self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
-        self.assertIn("Pages created: 1", result_message)
+        self.assertEqual(upload_record.pages_succeeded_count, 1) # Only Page A from metadata
+        self.assertEqual(upload_record.pages_failed_count, 0)   # Page B was not in metadata, so not a "failure"
+        self.assertEqual(upload_record.attachments_succeeded_count, 0)
+        self.assertTrue(upload_record.progress_message.startswith("Import completed."))
+        # Error details should ideally be empty or mention skipped files if that's logged as non-critical info
+        # The progress_message itself already states "Pages: 1 succeeded", so the specific substring check removed.
+        self.assertTrue(upload_record.error_details == "" or upload_record.error_details is None or "skipped" in upload_record.error_details.lower())
         self.assertEqual(Page.objects.count(), 1)
         self.assertTrue(Page.objects.filter(original_confluence_id="100", title="Page A Title from Meta", space=self.space_default_in_ws_default).exists())
         self.assertFalse(Page.objects.filter(title="Page B Title (Not in Meta)").exists())
@@ -737,10 +793,16 @@ class ConfluenceImportTaskTests(TestCase):
         zip_path = self._create_dummy_confluence_zip("test_title_mismatch.zip", html_files_data=html_data, metadata_xml_content=sample_metadata_xml)
         upload_file = SimpleUploadedFile(name=os.path.basename(zip_path), content=open(zip_path, 'rb').read(), content_type='application/zip')
         upload_record = ConfluenceUpload.objects.create(user=self.user, file=upload_file) # Uses fallback
-        result_message = import_confluence_space(confluence_upload_id=upload_record.id)
+        import_confluence_space(confluence_upload_id=upload_record.id)
         upload_record.refresh_from_db()
         self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_FAILED)
-        self.assertIn("Pages created: 0", result_message)
+        self.assertEqual(upload_record.pages_succeeded_count, 0)
+        self.assertEqual(upload_record.pages_failed_count, 1) # Page '300' should fail
+        self.assertEqual(upload_record.attachments_succeeded_count, 0)
+        self.assertTrue("failed" in upload_record.progress_message.lower() or "error" in upload_record.progress_message.lower())
+        self.assertTrue(bool(upload_record.error_details), "Error details should be populated on failure.")
+        self.assertIn("Metadata ID: 300", upload_record.error_details) # Check if the specific page is mentioned by Metadata ID
+        self.assertIn("not found by id or title match", upload_record.error_details.lower())
         self.assertEqual(Page.objects.count(), 0)
 
     def test_import_task_fails_if_metadata_file_is_present_but_empty_or_unparsable(self):
@@ -753,6 +815,14 @@ class ConfluenceImportTaskTests(TestCase):
         import_confluence_space(confluence_upload_id=upload_record_empty.id)
         upload_record_empty.refresh_from_db()
         self.assertEqual(upload_record_empty.status, ConfluenceUpload.STATUS_FAILED)
+        self.assertEqual(upload_record_empty.pages_succeeded_count, 0)
+        self.assertEqual(upload_record_empty.pages_failed_count, 0) # Fails before page processing attempt
+        self.assertEqual(upload_record_empty.attachments_succeeded_count, 0)
+        self.assertTrue("failed" in upload_record_empty.progress_message.lower() or "error" in upload_record_empty.progress_message.lower())
+        self.assertTrue(bool(upload_record_empty.error_details), "Error details should be populated for empty metadata.")
+        self.assertIn("metadata", upload_record_empty.error_details.lower())
+        self.assertIn("empty", upload_record_empty.error_details.lower())
+
         Page.objects.all().delete(); ConfluenceUpload.objects.all().delete() # Cleanup for next case
         malformed_metadata_xml = "<unclosed><tag>"
         zip_path_malformed_meta = self._create_dummy_confluence_zip("test_malformed_meta.zip", html_files_data=html_data, metadata_xml_content=malformed_metadata_xml)
@@ -761,6 +831,13 @@ class ConfluenceImportTaskTests(TestCase):
         import_confluence_space(confluence_upload_id=upload_record_malformed.id)
         upload_record_malformed.refresh_from_db()
         self.assertEqual(upload_record_malformed.status, ConfluenceUpload.STATUS_FAILED)
+        self.assertEqual(upload_record_malformed.pages_succeeded_count, 0)
+        self.assertEqual(upload_record_malformed.pages_failed_count, 0) # Fails before page processing attempt
+        self.assertEqual(upload_record_malformed.attachments_succeeded_count, 0)
+        self.assertTrue("failed" in upload_record_malformed.progress_message.lower() or "error" in upload_record_malformed.progress_message.lower())
+        self.assertTrue(bool(upload_record_malformed.error_details), "Error details should be populated for malformed metadata.")
+        self.assertIn("metadata", upload_record_malformed.error_details.lower())
+        self.assertTrue("parse" in upload_record_malformed.error_details.lower() or "malformed" in upload_record_malformed.error_details.lower(), "Error details should mention parsing or malformed metadata.")
 
     # New tests for specific targeting
     def test_import_task_uses_explicit_target_space(self):
@@ -774,6 +851,11 @@ class ConfluenceImportTaskTests(TestCase):
         import_confluence_space(confluence_upload_id=upload_record.id)
         upload_record.refresh_from_db()
         self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        self.assertEqual(upload_record.pages_succeeded_count, 1)
+        self.assertEqual(upload_record.pages_failed_count, 0)
+        self.assertEqual(upload_record.attachments_succeeded_count, 0)
+        self.assertTrue(upload_record.progress_message.startswith("Import completed."))
+        self.assertTrue(upload_record.error_details == "" or upload_record.error_details is None)
         self.assertEqual(Page.objects.count(), 1)
         created_page = Page.objects.first()
         self.assertEqual(created_page.title, "Targeted Page 1")
@@ -797,6 +879,11 @@ class ConfluenceImportTaskTests(TestCase):
         import_confluence_space(confluence_upload_id=upload_record.id)
         upload_record.refresh_from_db()
         self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        self.assertEqual(upload_record.pages_succeeded_count, 1)
+        self.assertEqual(upload_record.pages_failed_count, 0)
+        self.assertEqual(upload_record.attachments_succeeded_count, 0)
+        self.assertTrue(upload_record.progress_message.startswith("Import completed."))
+        self.assertTrue(upload_record.error_details == "" or upload_record.error_details is None)
         created_page = Page.objects.get(original_confluence_id="targetws1")
         self.assertEqual(created_page.space.workspace, self.ws_target) # Must be in the target workspace
         self.assertIn(created_page.space, [self.space_target_in_ws_target, self.space_alt_in_ws_target]) # Belongs to one of the spaces in target WS
@@ -812,6 +899,147 @@ class ConfluenceImportTaskTests(TestCase):
         import_confluence_space(confluence_upload_id=upload_record.id)
         upload_record.refresh_from_db()
         self.assertEqual(upload_record.status, ConfluenceUpload.STATUS_COMPLETED)
+        self.assertEqual(upload_record.pages_succeeded_count, 1)
+        self.assertEqual(upload_record.pages_failed_count, 0)
+        self.assertEqual(upload_record.attachments_succeeded_count, 0)
+        self.assertTrue(upload_record.progress_message.startswith("Import completed."))
+        self.assertTrue(upload_record.error_details == "" or upload_record.error_details is None)
         created_page = Page.objects.get(original_confluence_id="fallback1")
         self.assertEqual(created_page.space, self.space_default_in_ws_default)
         self.assertEqual(created_page.space.workspace, self.ws_default)
+
+
+# Test class for the ConfluenceUploadStatusView API endpoint
+from rest_framework.test import APITestCase # Ensure this is imported if not already at top
+
+class ConfluenceUploadStatusViewTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(username='api_status_test_user', password='password')
+        cls.other_user = User.objects.create_user(username='api_status_other_user', password='password')
+
+        # Create a dummy file for uploads
+        cls.dummy_file_content = b"dummy zip content for status API tests"
+        cls.dummy_zip_file = SimpleUploadedFile(
+            "status_api_test.zip",
+            cls.dummy_file_content,
+            "application/zip"
+        )
+
+        # Upload in PENDING state
+        cls.upload_pending = ConfluenceUpload.objects.create(
+            user=cls.user,
+            file=cls.dummy_zip_file # Re-use or create new for each if file state matters
+        )
+
+        # Upload in PROCESSING state with some progress
+        cls.upload_processing = ConfluenceUpload.objects.create(
+            user=cls.user,
+            file=SimpleUploadedFile("processing.zip", b"...", "application/zip"),
+            status=ConfluenceUpload.STATUS_PROCESSING,
+            pages_succeeded_count=5,
+            pages_failed_count=1,
+            attachments_succeeded_count=10,
+            progress_message="Processing page 6 of 20..."
+        )
+
+        # Upload in COMPLETED state
+        cls.upload_completed = ConfluenceUpload.objects.create(
+            user=cls.user,
+            file=SimpleUploadedFile("completed.zip", b"...", "application/zip"),
+            status=ConfluenceUpload.STATUS_COMPLETED,
+            pages_succeeded_count=20,
+            pages_failed_count=0,
+            attachments_succeeded_count=30,
+            progress_message="Import completed successfully. 20 pages, 30 attachments."
+        )
+
+        # Upload in FAILED state
+        cls.upload_failed = ConfluenceUpload.objects.create(
+            user=cls.user,
+            file=SimpleUploadedFile("failed.zip", b"...", "application/zip"),
+            status=ConfluenceUpload.STATUS_FAILED,
+            pages_succeeded_count=2,
+            pages_failed_count=1, # e.g. 1 page failed, causing overall failure
+            attachments_succeeded_count=3,
+            progress_message="Import failed due to an error.",
+            error_details="Detailed error: Could not parse critical file 'entities.xml'."
+        )
+
+        cls.base_url = "/api/v1/io/import/confluence/status/"
+
+    def tearDown(self):
+        # Clean up files from MEDIA_ROOT if they were actually saved by FileField
+        # This depends on MEDIA_ROOT being set to a temp directory for tests
+        for upload in ConfluenceUpload.objects.all():
+            if upload.file and hasattr(upload.file, 'path'):
+                 if os.path.exists(upload.file.path):
+                    try:
+                        upload.file.delete(save=False) # Avoids trying to save model again
+                    except Exception as e:
+                        print(f"Error deleting file {upload.file.path} during tearDown: {e}")
+        ConfluenceUpload.objects.all().delete()
+
+
+    def test_retrieve_upload_status_pending(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.base_url}{self.upload_pending.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], ConfluenceUpload.STATUS_PENDING)
+        self.assertEqual(response.data['pages_succeeded_count'], 0)
+        self.assertEqual(response.data['pages_failed_count'], 0)
+        self.assertEqual(response.data['attachments_succeeded_count'], 0)
+        self.assertIsNone(response.data['progress_message']) # Default is None
+        self.assertIsNone(response.data['error_details'])    # Default is None
+        self.assertTrue(response.data['file_url'].endswith("status_api_test.zip"))
+
+    def test_retrieve_upload_status_processing(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.base_url}{self.upload_processing.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], ConfluenceUpload.STATUS_PROCESSING)
+        self.assertEqual(response.data['pages_succeeded_count'], 5)
+        self.assertEqual(response.data['pages_failed_count'], 1)
+        self.assertEqual(response.data['attachments_succeeded_count'], 10)
+        self.assertEqual(response.data['progress_message'], "Processing page 6 of 20...")
+        self.assertIsNone(response.data['error_details'])
+
+    def test_retrieve_upload_status_completed(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.base_url}{self.upload_completed.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], ConfluenceUpload.STATUS_COMPLETED)
+        self.assertEqual(response.data['pages_succeeded_count'], 20)
+        self.assertEqual(response.data['pages_failed_count'], 0)
+        self.assertEqual(response.data['attachments_succeeded_count'], 30)
+        self.assertEqual(response.data['progress_message'], "Import completed successfully. 20 pages, 30 attachments.")
+        # error_details might be an empty string or None if completed successfully
+        self.assertTrue(response.data['error_details'] == "" or response.data['error_details'] is None)
+
+
+    def test_retrieve_upload_status_failed(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.base_url}{self.upload_failed.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], ConfluenceUpload.STATUS_FAILED)
+        self.assertEqual(response.data['pages_succeeded_count'], 2)
+        self.assertEqual(response.data['pages_failed_count'], 1)
+        self.assertEqual(response.data['attachments_succeeded_count'], 3)
+        self.assertEqual(response.data['progress_message'], "Import failed due to an error.")
+        self.assertEqual(response.data['error_details'], "Detailed error: Could not parse critical file 'entities.xml'.")
+
+    def test_retrieve_status_nonexistent_upload(self):
+        self.client.force_authenticate(user=self.user)
+        non_existent_pk = self.upload_failed.pk + 1000 # Assumed non-existent
+        response = self.client.get(f"{self.base_url}{non_existent_pk}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_unauthenticated_cannot_retrieve_status(self):
+        self.client.logout() # Ensure client is unauthenticated
+        response = self.client.get(f"{self.base_url}{self.upload_pending.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED) # Or 403 if default is IsAuthenticated
+
+    def test_user_cannot_retrieve_status_for_others_upload(self):
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.get(f"{self.base_url}{self.upload_pending.pk}/") # upload_pending belongs to self.user
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND) # Or 403 depending on object-level permissions

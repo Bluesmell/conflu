@@ -1,6 +1,6 @@
 from django.db import models
 import uuid
-from pages.models import PageVersion
+from pages.models import PageVersion # FallbackMacro depends on this
 from django.contrib.auth import get_user_model
 import os
 
@@ -9,14 +9,14 @@ User = get_user_model()
 try:
     from workspaces.models import Workspace, Space
 except ImportError:
+    # These should ideally always be available due to app dependencies.
+    # If not, Django will fail at a higher level (e.g., startup or when resolving relations).
     Workspace = None
     Space = None
-    # This is a simple way to handle it for model definition.
-    # If these models are critical for the app to even load, a more robust check might be needed in apps.py ready()
-    print("WARNING: importer/models.py - Workspace/Space models from workspaces.models not found. ConfluenceUpload target fields might be effectively unusable if models remain None.")
+    print("CRITICAL WARNING: importer/models.py - Workspace/Space models from workspaces.models not found. This will likely cause errors.")
 
 
-class FallbackMacro(models.Model):
+class FallbackMacro(models.Model): # Existing model, ensure it's preserved
     page_version = models.ForeignKey(PageVersion, on_delete=models.CASCADE, related_name='fallback_macros')
     macro_name = models.CharField(max_length=100)
     raw_macro_content = models.TextField()
@@ -27,6 +27,7 @@ class FallbackMacro(models.Model):
         verbose_name = "Fallback Macro"
         verbose_name_plural = "Fallback Macros"
         app_label = 'importer'
+
 
 class ConfluenceUpload(models.Model):
     STATUS_PENDING = 'PENDING'
@@ -69,35 +70,32 @@ class ConfluenceUpload(models.Model):
         help_text="Celery task ID for the import process."
     )
 
-    # New fields for target workspace and space
-    # Ensure Workspace and Space are not None before defining ForeignKeys
-    if Workspace:
-        target_workspace = models.ForeignKey(
-            Workspace,
-            on_delete=models.SET_NULL,
-            null=True,
-            blank=True,
-            related_name='confluence_uploads_targeted_here',
-            help_text="Optional: The specific workspace to import content into."
-        )
-    else:
-        # Provide a placeholder if Workspace is None, though migrations might fail if it's truly missing
-        target_workspace = models.UUIDField(null=True, blank=True, help_text="Placeholder for target_workspace_id if Workspace model is unavailable.")
+    # Target fields - defined directly assuming Workspace and Space are available
+    target_workspace = models.ForeignKey(
+        Workspace if Workspace else 'workspaces.Workspace', # String reference if Workspace is None at this point
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='confluence_uploads_as_target_ws', # Unique related_name
+        help_text="Optional: The specific workspace to import content into."
+    )
 
+    target_space = models.ForeignKey(
+        Space if Space else 'workspaces.Space', # String reference if Space is None
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='confluence_uploads_as_target_sp', # Unique related_name
+        help_text="Optional: The specific space to import content into. Must belong to target_workspace if set."
+    )
 
-    if Space:
-        target_space = models.ForeignKey(
-            Space,
-            on_delete=models.SET_NULL,
-            null=True,
-            blank=True,
-            related_name='confluence_uploads_targeted_here',
-            help_text="Optional: The specific space to import content into. Must belong to target_workspace if set."
-        )
-    else:
-        # Placeholder if Space is None
-        target_space = models.UUIDField(null=True, blank=True, help_text="Placeholder for target_space_id if Space model is unavailable.")
+    # New fields for progress tracking:
+    pages_succeeded_count = models.IntegerField(default=0, help_text="Number of pages successfully imported.")
+    pages_failed_count = models.IntegerField(default=0, help_text="Number of pages that failed to import.")
+    attachments_succeeded_count = models.IntegerField(default=0, help_text="Number of attachments successfully processed.")
 
+    progress_message = models.CharField(max_length=255, null=True, blank=True, help_text="Current stage or progress message of the import.")
+    error_details = models.TextField(null=True, blank=True, help_text="Summary of errors encountered during import.")
 
     class Meta:
         ordering = ['-uploaded_at']
