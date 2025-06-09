@@ -1,0 +1,34 @@
+.appHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ccc;
+  height: 60px; /* Fixed header height */
+  flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+.logo a {
+  text-decoration: none;
+  font-size: 1.5em;
+  font-weight: bold;
+  color: #333;
+}
+
+/* New container for the search bar to allow it to take space */
+.searchContainer {
+  flex-grow: 1; /* Allows search bar to take available space */
+  display: flex;
+  justify-content: center; /* Center search bar within its container */
+  padding: 0 20px; /* Add some padding around search bar */
+}
+
+.navigation span {
+  margin-left: 20px;
+  cursor: pointer;
+}
+
+.navigation span:hover {
+  text-decoration: underline;
+}

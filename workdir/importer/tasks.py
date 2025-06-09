@@ -54,14 +54,16 @@ def import_confluence_space(self, confluence_upload_id):
         return f"ConfluenceUpload record {confluence_upload_id} not found."
 
     # Initialize/Reset progress fields for this run
-    upload_record.status = ConfluenceUpload.STATUS_PROCESSING
+    upload_record.status = ConfluenceUpload.STATUS_PROCESSING # Old overall status
+    upload_record.progress_status = ConfluenceUpload.STATUS_PENDING # New granular status
+    upload_record.progress_percent = 0
     upload_record.task_id = self.request.id
     upload_record.pages_succeeded_count = 0
     upload_record.pages_failed_count = 0
     upload_record.attachments_succeeded_count = 0
     upload_record.progress_message = "Import process initiated..."
     upload_record.error_details = ""
-    upload_record.save(update_fields=['status', 'task_id', 'pages_succeeded_count', 'pages_failed_count', 'attachments_succeeded_count', 'progress_message', 'error_details'])
+    upload_record.save(update_fields=['status', 'progress_status', 'progress_percent', 'task_id', 'pages_succeeded_count', 'pages_failed_count', 'attachments_succeeded_count', 'progress_message', 'error_details'])
 
     importer_user = upload_record.user
     print(f"[Importer Task] ID {self.request.id} | Starting import for Upload ID: {confluence_upload_id} by User: {importer_user.username if importer_user else 'Unknown'}")
@@ -70,9 +72,11 @@ def import_confluence_space(self, confluence_upload_id):
     if not os.path.exists(zip_file_actual_path):
         error_message = f"Uploaded ZIP file not found: {zip_file_actual_path} for Upload ID {confluence_upload_id}."
         upload_record.status = ConfluenceUpload.STATUS_FAILED
+        upload_record.progress_status = ConfluenceUpload.STATUS_FAILED
+        upload_record.progress_percent = 0
         upload_record.progress_message = "Error: ZIP file not found."
         upload_record.error_details = error_message
-        upload_record.save()
+        upload_record.save() # Save handled in finally, but good to save critical error info immediately
         return error_message
 
     temp_extraction_main_dir = f"temp_confluence_export_{self.request.id}"
@@ -122,6 +126,8 @@ def import_confluence_space(self, confluence_upload_id):
         error_msg_no_space = "Import failed: No target Space could be determined. Please specify a target or ensure a default/fallback space exists and is not deleted."
         print(f"[Importer Task] ID {self.request.id} | {error_msg_no_space}")
         upload_record.status = ConfluenceUpload.STATUS_FAILED
+        upload_record.progress_status = ConfluenceUpload.STATUS_FAILED
+        upload_record.progress_percent = 0 # Or some initial error percent
         upload_record.progress_message = error_msg_no_space
         upload_record.error_details = error_msg_no_space
         # Save handled in finally
@@ -130,32 +136,49 @@ def import_confluence_space(self, confluence_upload_id):
     original_id_to_new_pk_map = {}
 
     try:
+        upload_record.progress_status = ConfluenceUpload.STATUS_EXTRACTING
+        upload_record.progress_percent = 5
         upload_record.progress_message = "Extracting files from ZIP archive...";
-        upload_record.save(update_fields=['progress_message'])
+        upload_record.save(update_fields=['progress_status', 'progress_percent', 'progress_message'])
         html_files, metadata_file_path = extract_html_and_metadata_from_zip(
             zip_file_actual_path, temp_extract_dir=abs_temp_extraction_main_dir
         )
         upload_record.progress_message = "File extraction complete.";
+        # upload_record.progress_percent = 10 # Example: update after extraction
         upload_record.save(update_fields=['progress_message'])
 
         page_hierarchy_from_metadata = []
         if metadata_file_path:
+            upload_record.progress_status = ConfluenceUpload.STATUS_PARSING_METADATA
+            upload_record.progress_percent = 15 # Example percent
             upload_record.progress_message = "Parsing metadata file (e.g., entities.xml)...";
-            upload_record.save(update_fields=['progress_message'])
+            upload_record.save(update_fields=['progress_status', 'progress_percent', 'progress_message'])
             page_hierarchy_from_metadata = parse_confluence_metadata_for_hierarchy(metadata_file_path)
             if not page_hierarchy_from_metadata:
                 error_list_for_details.append(f"Metadata file '{os.path.basename(metadata_file_path)}' was parsed but yielded no page hierarchy data.")
+            upload_record.progress_message = "Metadata parsing complete.";
+            upload_record.save(update_fields=['progress_message'])
         else:
             final_task_message = "Import failed: Metadata file (e.g., entities.xml) missing from ZIP."
             error_list_for_details.append(final_task_message)
-            raise Exception(final_task_message)
+            raise Exception(final_task_message) # This will set FAILED status in general except block
 
         html_id_to_path_map = {}
         parsed_title_to_html_path = {}
+        num_html_files = len(html_files) if html_files else 0
+        # Base percentage for HTML indexing, e.g., after metadata parsing (15%) up to start of page processing (e.g. 25%)
+        html_indexing_start_percent = upload_record.progress_percent # Should be around 15%
+        html_indexing_total_progress_span = 10 # Allocate 10% for this step, e.g. from 15% to 25%
+
         if html_files:
-            upload_record.progress_message = f"Indexing {len(html_files)} HTML files...";
+            upload_record.progress_message = f"Indexing {num_html_files} HTML files...";
             upload_record.save(update_fields=['progress_message'])
-            for html_path_for_map in html_files:
+            for idx, html_path_for_map in enumerate(html_files):
+                if num_html_files > 0:
+                    current_html_indexing_progress = int((idx / num_html_files) * html_indexing_total_progress_span)
+                    upload_record.progress_percent = html_indexing_start_percent + current_html_indexing_progress
+                    if idx % 20 == 0 or idx == num_html_files -1 : # Update DB periodically
+                         upload_record.save(update_fields=['progress_percent'])
                 temp_parsed_data = parse_html_file_basic(html_path_for_map)
                 if temp_parsed_data and not temp_parsed_data.get("error"):
                     html_extracted_id = temp_parsed_data.get("html_extracted_page_id")
@@ -173,9 +196,10 @@ def import_confluence_space(self, confluence_upload_id):
                              parsed_title_to_html_path[parsed_title] = html_path_for_map
                 elif temp_parsed_data and temp_parsed_data.get("error"):
                      error_list_for_details.append(f"Skipping file '{os.path.basename(html_path_for_map)}' from map creation due to parsing error: {temp_parsed_data.get('error')}")
+            upload_record.progress_percent = html_indexing_start_percent + html_indexing_total_progress_span # e.g. 25%
             upload_record.progress_message = f"HTML indexing complete. Found {len(html_id_to_path_map)} embedded IDs, {len(parsed_title_to_html_path)} titles.";
-            upload_record.save(update_fields=['progress_message'])
-        else:
+            upload_record.save(update_fields=['progress_message', 'progress_percent'])
+        else: # No HTML files
             final_task_message = "Import failed: No HTML files found in ZIP."
             error_list_for_details.append(final_task_message)
             raise Exception(final_task_message)
@@ -185,20 +209,30 @@ def import_confluence_space(self, confluence_upload_id):
             error_list_for_details.append(final_task_message)
             raise Exception(final_task_message)
 
+        upload_record.progress_status = ConfluenceUpload.STATUS_PROCESSING_PAGES
+        page_processing_start_percent = upload_record.progress_percent # Should be around 25%
+        page_processing_total_progress_span = 65 # Allocate a large chunk for this, e.g., from 25% to 90%
+
         num_metadata_pages = len(page_hierarchy_from_metadata)
         print(f"[Importer Task] ID {self.request.id} | Processing {num_metadata_pages} pages from metadata into Space '{target_space_for_pages.name}' (ID: {target_space_for_pages.id})")
 
         for i, page_meta_entry in enumerate(page_hierarchy_from_metadata):
+            current_page_processing_progress = 0
+            if num_metadata_pages > 0:
+                current_page_processing_progress = int(((i + 1) / num_metadata_pages) * page_processing_total_progress_span)
+
             authoritative_page_id = page_meta_entry.get('id')
             authoritative_page_title = page_meta_entry.get('title', f"Untitled Page {authoritative_page_id or 'UnknownID'}")
             log_page_ref = f"'{authoritative_page_title}' (Metadata ID: {authoritative_page_id})"
 
+            # Update progress periodically
             if i % 5 == 0 or i == num_metadata_pages - 1:
+                upload_record.progress_percent = page_processing_start_percent + current_page_processing_progress
                 upload_record.progress_message = f"Processing page {i+1}/{num_metadata_pages}: {log_page_ref}..."
-                upload_record.pages_succeeded_count = local_pages_succeeded_count
+                upload_record.pages_succeeded_count = local_pages_succeeded_count # Sync counters
                 upload_record.pages_failed_count = local_pages_failed_count
                 upload_record.attachments_succeeded_count = local_attachments_succeeded_count
-                upload_record.save(update_fields=['progress_message', 'pages_succeeded_count', 'pages_failed_count', 'attachments_succeeded_count'])
+                upload_record.save(update_fields=['progress_status', 'progress_percent', 'progress_message', 'pages_succeeded_count', 'pages_failed_count', 'attachments_succeeded_count'])
 
             if not authoritative_page_id:
                 msg = f"Metadata entry {i+1} missing ID. Entry: {page_meta_entry}. Skipping."
@@ -270,15 +304,25 @@ def import_confluence_space(self, confluence_upload_id):
                 msg = f"Page {log_page_ref}: DB creation error: {page_create_error}"
                 print(f"    ERROR: {msg}"); error_list_for_details.append(msg)
 
+        # Final sync of loop-based counters before moving to next stage
         upload_record.pages_succeeded_count = local_pages_succeeded_count
         upload_record.pages_failed_count = local_pages_failed_count
         upload_record.attachments_succeeded_count = local_attachments_succeeded_count
-        upload_record.save(update_fields=['pages_succeeded_count', 'pages_failed_count', 'attachments_succeeded_count'])
+        upload_record.progress_percent = page_processing_start_percent + page_processing_total_progress_span # e.g. 90%
+        upload_record.save(update_fields=['pages_succeeded_count', 'pages_failed_count', 'attachments_succeeded_count', 'progress_percent'])
 
         if page_hierarchy_from_metadata and original_id_to_new_pk_map:
-            upload_record.progress_message = "Linking page hierarchy..."; upload_record.save(update_fields=['progress_message'])
-            # ... (Hierarchy linking - as before, no direct count changes on upload_record here) ...
-            for page_meta_entry_for_link in page_hierarchy_from_metadata:
+            upload_record.progress_status = ConfluenceUpload.STATUS_LINKING_HIERARCHY
+            upload_record.progress_message = "Linking page hierarchy...";
+            # hierarchy_linking_start_percent = upload_record.progress_percent # Should be 90%
+            # hierarchy_linking_total_span = 5 # e.g. 90% to 95%
+            upload_record.save(update_fields=['progress_status', 'progress_message'])
+
+            # Hierarchy linking itself doesn't have a granular loop progress here, but we can set a range for it
+            # For simplicity, we'll just mark it as a phase and then move to completion percent.
+            # A more complex calculation could be based on number of links to make.
+
+            for page_meta_entry_for_link in page_hierarchy_from_metadata: # No specific progress update inside this loop for now
                 original_child_id = page_meta_entry_for_link.get('id'); original_parent_id = page_meta_entry_for_link.get('parent_id')
                 if original_child_id and original_parent_id:
                     child_pk, parent_pk = original_id_to_new_pk_map.get(original_child_id), original_id_to_new_pk_map.get(original_parent_id)
@@ -290,55 +334,65 @@ def import_confluence_space(self, confluence_upload_id):
                             child_page.parent = parent_page_instance; child_page.save(update_fields=['parent', 'updated_at']); pages_linked_count += 1
                         except Page.DoesNotExist: error_list_for_details.append(f"Hierarchy link failed: Child (PK:{child_pk}) or Parent (PK:{parent_pk}) not found.")
                         except Exception as link_error: error_list_for_details.append(f"Hierarchy link error OrigID {original_child_id} to {original_parent_id}: {link_error}")
-            upload_record.progress_message = f"Hierarchy linking complete. {pages_linked_count} links established."; upload_record.save(update_fields=['progress_message'])
 
-        if upload_record.pages_succeeded_count > 0:
+            upload_record.progress_percent = 95 # After hierarchy linking
+            upload_record.progress_message = f"Hierarchy linking complete. {pages_linked_count} links established.";
+            upload_record.save(update_fields=['progress_percent', 'progress_message'])
+
+        # Final status determination
+        if upload_record.pages_succeeded_count > 0 or (num_metadata_pages == 0 and not error_list_for_details) : # Considered success if pages imported or if 0 pages in metadata and no errors
             upload_record.status = ConfluenceUpload.STATUS_COMPLETED
-            upload_record.progress_message = f"Import completed. Pages: {upload_record.pages_succeeded_count} succeeded, {upload_record.pages_failed_count} failed. Attachments: {upload_record.attachments_succeeded_count}. Pages linked: {pages_linked_count}."
-        elif upload_record.pages_failed_count > 0 and num_metadata_pages > 0:
+            upload_record.progress_status = ConfluenceUpload.STATUS_COMPLETED
+            upload_record.progress_percent = 100
+            upload_record.progress_message = f"Import completed. Pages: {upload_record.pages_succeeded_count} succeeded, {upload_record.pages_failed_count} failed/skipped. Attachments: {upload_record.attachments_succeeded_count}. Pages linked: {pages_linked_count}."
+        else: # No pages succeeded or errors occurred that prevented any success
             upload_record.status = ConfluenceUpload.STATUS_FAILED
-            upload_record.progress_message = f"Import failed. Pages: {upload_record.pages_succeeded_count} succeeded, {upload_record.pages_failed_count} failed. Attachments: {upload_record.attachments_succeeded_count}. Pages linked: {pages_linked_count}."
-        else:
-            if upload_record.status != ConfluenceUpload.STATUS_FAILED:
-                upload_record.status = ConfluenceUpload.STATUS_COMPLETED # Or FAILED if 0 pages created from metadata is a failure
-            upload_record.progress_message = f"Import finished. Pages created: {upload_record.pages_succeeded_count}, Failed/Skipped: {upload_record.pages_failed_count}, Attachments: {upload_record.attachments_succeeded_count}, Linked: {pages_linked_count}. Check logs for details."
+            upload_record.progress_status = ConfluenceUpload.STATUS_FAILED
+            # Keep progress_percent where it was, or set to 100 if failure is also "completion" of the task attempt
+            # upload_record.progress_percent = 100; # Mark as 100% done, but status is FAILED
+            upload_record.progress_message = f"Import failed or completed with no pages processed. Pages: {upload_record.pages_succeeded_count} succeeded, {upload_record.pages_failed_count} failed/skipped. Attachments: {upload_record.attachments_succeeded_count}. Pages linked: {pages_linked_count}."
+            if not error_list_for_details and num_metadata_pages > 0: # If no specific errors but still failed (e.g. all pages skipped)
+                 error_list_for_details.append("No pages were successfully imported. Check logs for individual page processing details.")
+
 
         if error_list_for_details:
-            # Prepend to existing error_details if any, rather than overwriting
-            existing_error_details = upload_record.error_details if upload_record.error_details else ""
-            new_errors = "\n".join(error_list_for_details)
-            full_error_message = f"{existing_error_details}\n{new_errors}".strip()
-            upload_record.error_details = full_error_message[:2000] # Limit length
+            # Prepend to existing error_details if any, rather than overwriting.
+            # Ensure this doesn't happen if the task is already marked as failed from a critical exception.
+            if upload_record.progress_status != ConfluenceUpload.STATUS_FAILED: # Don't overwrite if already failed critically
+                existing_error_details = upload_record.error_details if upload_record.error_details else ""
+                new_errors = "\n".join(error_list_for_details)
+                full_error_message = f"{existing_error_details}\n{new_errors}".strip()
+                upload_record.error_details = full_error_message[:2000] # Limit length
 
     except Exception as e:
         error_message_critical = f"CRITICAL ERROR: {type(e).__name__} - {e}"
         print(f"[Importer Task] ID {self.request.id} | {error_message_critical}")
-        # Ensure upload_record is available and update its fields
-        if upload_record: # Check if upload_record was successfully fetched
-            upload_record.status = ConfluenceUpload.STATUS_FAILED
-            upload_record.progress_message = "Import failed due to a critical error."
+        if upload_record:
+            upload_record.status = ConfluenceUpload.STATUS_FAILED # Old status
+            upload_record.progress_status = ConfluenceUpload.STATUS_FAILED # New granular status
+            # Don't reset percent if it was making progress, or set to a specific error percent
+            # upload_record.progress_percent = upload_record.progress_percent # Keep current or set e.g. 100 if failure is "completion"
+            upload_record.progress_message = "Import failed due to a critical error. Check error details."
 
-            current_errors = error_list_for_details if error_list_for_details else []
-            current_errors.insert(0, error_message_critical)
+            current_errors = error_list_for_details if error_list_for_details else [] # error_list_for_details might be empty if exception is early
+            if error_message_critical not in current_errors : current_errors.insert(0, error_message_critical)
 
-            # Prepend to existing error_details if any
-            existing_error_details = upload_record.error_details if upload_record.error_details and upload_record.error_details != error_message_critical else ""
+            existing_error_details = upload_record.error_details if upload_record.error_details and error_message_critical not in upload_record.error_details else ""
             new_error_string = "\n".join(current_errors)
             full_error_message = f"{existing_error_details}\n{new_error_string}".strip()
-            if error_message_critical in existing_error_details and error_message_critical in new_error_string: # Avoid duplication if already set
-                 full_error_message = existing_error_details if existing_error_details else new_error_string
-
             upload_record.error_details = full_error_message[:2000]
-        # final_task_message is already set to error_message_critical by this point in original logic.
-        # No need to re-assign if it's already capturing the core error.
+        # No return here, finally block will handle saving.
 
     finally:
-        # Ensure upload_record is saved if it exists
-        if upload_record:
+        if upload_record: # Ensure it's saved with the latest status/progress, especially if an exception occurred
             upload_record.save()
 
         if os.path.exists(abs_temp_extraction_main_dir):
             cleanup_temp_extraction_dir(temp_extract_dir=abs_temp_extraction_main_dir)
-        print(f"[Importer Task] ID {self.request.id} | Finished. Final status: {upload_record.get_status_display()}. Message: {upload_record.progress_message}")
+        if upload_record: # Check if upload_record was loaded
+             print(f"[Importer Task] ID {self.request.id} | Finished. Final granular status: {upload_record.get_progress_status_display() if hasattr(upload_record, 'get_progress_status_display') else upload_record.progress_status}. Message: {upload_record.progress_message}")
+        else:
+             print(f"[Importer Task] ID {self.request.id} | Finished. CRITICAL: upload_record was not available.")
 
-    return upload_record.progress_message
+
+    return upload_record.progress_message if upload_record else "Task finished with critical error (upload_record not found)."

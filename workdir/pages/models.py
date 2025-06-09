@@ -9,12 +9,38 @@ import uuid # Added for ensuring unique slugs and FallbackMacro
 # but models.py usually requires direct imports to be resolvable at load time.
 from workspaces.models import Space
 
+# For SearchVectorField and GIN index
+from django.contrib.postgres.search import SearchVectorField
+from django.contrib.postgres.indexes import GinIndex
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.contrib.postgres.search import SearchVector
+
 
 User = get_user_model()
+
+# Helper function to extract text from ProseMirror JSON
+def prosemirror_json_to_text(json_content):
+    if not isinstance(json_content, dict) or 'content' not in json_content:
+        return ''
+
+    text_parts = []
+
+    def extract_text_recursive(nodes):
+        for node in nodes:
+            if node.get('type') == 'text' and 'text' in node:
+                text_parts.append(node['text'])
+            if 'content' in node and isinstance(node['content'], list):
+                extract_text_recursive(node['content'])
+
+    extract_text_recursive(json_content['content'])
+    return ' '.join(text_parts)
+
 
 class Page(models.Model):
     space = models.ForeignKey(Space, on_delete=models.CASCADE, related_name='pages') # Existing, seems correct and non-nullable
     title = models.CharField(max_length=255, db_index=True)
+    search_vector = SearchVectorField(null=True, blank=True, editable=False) # Added SearchVectorField
     slug = models.SlugField(
         max_length=255,
         unique=True,
@@ -62,12 +88,30 @@ class Page(models.Model):
         ordering = ['title']
         verbose_name = "Page"
         verbose_name_plural = "Pages"
+        indexes = [
+            GinIndex(fields=['search_vector']), # Added GIN index
+        ]
         # If slugs need to be unique only within a space or under a parent:
         # unique_together = (('space', 'slug'), ('parent', 'slug'))
         # For now, global unique slug is fine as per unique=True on field.
 
     def __str__(self):
         return self.title
+
+    def update_search_vector(self):
+        """Updates the search_vector field for the current page instance."""
+        # Ensure raw_content (content_json) is converted to plain text
+        plain_content = prosemirror_json_to_text(self.content_json)
+
+        # Using 'A', 'B', 'C', 'D' for weights. 'A' is highest.
+        vector = SearchVector('title', weight='A') + \
+                   SearchVector(models.Value(plain_content), weight='B')
+                   # Use models.Value for plain_content as it's not a direct field name
+
+        # To avoid recursion with save() if this is called in save() and then save() is called again.
+        # We use update explicitly here. This is better handled by signals or a separate management command.
+        Page.objects.filter(pk=self.pk).update(search_vector=vector)
+
 
     def _generate_unique_slug(self):
         """
@@ -140,6 +184,36 @@ class Page(models.Model):
                      self.slug = self._generate_unique_slug() # Re-generate based on potentially conflicting user slug
 
         super().save(*args, **kwargs)
+
+# Signal to update search_vector when a Page is saved
+@receiver(post_save, sender=Page)
+def page_post_save(sender, instance, created, **kwargs):
+    # We only update the search vector if the title or content_json might have changed.
+    # For simplicity, we can update it on every save, or be more selective.
+    # If 'update_fields' is used in save(), check if title or content_json are in it.
+    if kwargs.get('raw', False): # Don't run during fixture loading
+        return
+
+    # Check if update_fields is present and if our relevant fields are being updated
+    update_fields = kwargs.get('update_fields')
+    if update_fields is not None and not ('title' in update_fields or 'content_json' in update_fields or 'search_vector' in update_fields):
+         # If update_fields is specified and doesn't include title/content_json/search_vector, skip update.
+         # This check helps avoid recursion if search_vector itself is in update_fields for some reason.
+         if 'search_vector' in update_fields and len(update_fields) == 1: # only search_vector is being updated
+             return # We are likely inside update_search_vector itself or similar.
+
+    # instance.update_search_vector()
+    # To avoid issues with calling save() within a signal that itself calls save(),
+    # it's often better to perform the update using a queryset update for the specific field,
+    # or connect to pre_save and modify the instance before it's saved.
+    # For now, let's do a direct update.
+    # This can be further optimized.
+
+    plain_content = prosemirror_json_to_text(instance.content_json)
+    Page.objects.filter(pk=instance.pk).update(
+        search_vector=SearchVector('title', weight='A') + SearchVector(models.Value(plain_content), weight='B')
+    )
+
 
 class PageVersion(models.Model):
     page = models.ForeignKey(Page, on_delete=models.CASCADE, related_name='versions')

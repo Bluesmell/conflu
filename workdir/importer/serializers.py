@@ -12,6 +12,7 @@ class ConfluenceUploadSerializer(serializers.ModelSerializer):
     target_space_name = serializers.CharField(source='target_space.name', read_only=True, allow_null=True)
 
     file_url = serializers.SerializerMethodField(read_only=True)
+    progress_status_display = serializers.CharField(source='get_progress_status_display', read_only=True) # For human-readable status
 
     class Meta:
         model = ConfluenceUpload
@@ -19,7 +20,12 @@ class ConfluenceUploadSerializer(serializers.ModelSerializer):
             'id', 'file', 'file_url',
             'user',
             'user_username',
-            'uploaded_at', 'status', 'task_id',
+            'uploaded_at',
+            'status', # Old status field
+            'progress_status', # New granular status field
+            'progress_status_display', # Display for progress_status
+            'progress_percent',
+            'task_id',
             'target_workspace',
             'target_workspace_id',
             'target_workspace_name',
@@ -31,7 +37,7 @@ class ConfluenceUploadSerializer(serializers.ModelSerializer):
             'pages_failed_count',
             'attachments_succeeded_count',
             'progress_message',
-            'error_details'
+            'error_details',
         ]
 
         read_only_fields = [
@@ -39,7 +45,10 @@ class ConfluenceUploadSerializer(serializers.ModelSerializer):
             'user',
             'user_username',
             'uploaded_at',
-            'status',
+            'status', # Old status
+            'progress_status', # New granular status
+            'progress_status_display',
+            'progress_percent',
             'task_id',
             'target_workspace_id',
             'target_workspace_name',

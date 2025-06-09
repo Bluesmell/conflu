@@ -53,3 +53,8 @@ class Space(models.Model):
         ordering = ['workspace__name', 'name'] # Order by workspace name then space name
         verbose_name = "Space"
         verbose_name_plural = "Spaces"
+        permissions = [
+            # "view_space" is built-in, so we don't need to redefine it.
+            ("edit_space_content", "Can add/edit pages within the space"), # More specific than generic "edit_space"
+            ("admin_space", "Can administer space (manage permissions, settings)"),
+        ]

@@ -1,0 +1,107 @@
+.searchResultsPage {
+  padding: 20px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.searchResultsPage h1 {
+  font-size: 1.8rem;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.loadingMessage,
+.errorMessage,
+.noResultsMessage,
+.infoMessage {
+  font-size: 1.1rem;
+  color: #555;
+  padding: 20px;
+  text-align: center;
+}
+
+.errorMessage {
+  color: #d9534f; /* Red for errors */
+}
+
+.resultsList {
+  list-style: none;
+  padding: 0;
+}
+
+.resultItem {
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 15px;
+  margin-bottom: 15px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.resultItem h2 {
+  font-size: 1.3rem;
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.resultItem h2 a {
+  text-decoration: none;
+  color: #007bff;
+}
+
+.resultItem h2 a:hover {
+  text-decoration: underline;
+}
+
+.headline {
+  font-size: 0.95rem;
+  color: #444;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.headline mark { /* Style for highlighted terms from SearchHeadline */
+  background-color: #ffe082; /* Light yellow highlight */
+  padding: 0.1em 0.2em;
+  border-radius: 2px;
+  font-weight: bold;
+}
+
+.metaInfo {
+  font-size: 0.85rem;
+  color: #777;
+}
+
+.metaInfo span {
+  margin-right: 15px;
+}
+
+.metaInfo span:last-child {
+  margin-right: 0;
+}
+
+/* Basic Pagination Placeholder Styles */
+.paginationControls {
+  margin-top: 30px;
+  text-align: center;
+}
+
+.paginationControls button {
+  padding: 8px 12px;
+  margin: 0 5px;
+  border: 1px solid #ccc;
+  background-color: #f8f8f8;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.paginationControls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.paginationControls button.active {
+  background-color: #007bff;
+  color: white;
+  border-color: #007bff;
+}
