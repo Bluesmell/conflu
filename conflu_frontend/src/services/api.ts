@@ -10,41 +10,36 @@ const apiClient = axios.create({
 });
 
 // Import interfaces from the dedicated types file
-import {
-  Space, Page, PageCreatePayload, PageUpdatePayload, PageSearchSerializer,
-  User, Group, SpacePermissionData, AssignPermissionPayload,
-  FallbackMacro,
-  MermaidValidationRequest, MermaidValidationResponse // Added Mermaid types
-} from '../types/apiModels';
+import * as ApiModels from '../types/apiModels';
 import { ConfluenceUpload } from '../types/importerModels';
 
 // API Service Functions
 
 // Spaces
-export const fetchSpaces = async (): Promise<Space[]> => {
-  const response = await apiClient.get<Space[]>('/spaces/');
+export const fetchSpaces = async (): Promise<ApiModels.Space[]> => {
+  const response = await apiClient.get<ApiModels.Space[]>('/spaces/');
   return response.data;
 };
 
-export const fetchSpaceDetails = async (spaceKey: string): Promise<Space> => {
-  const response = await apiClient.get<Space>(`/spaces/${spaceKey}/`);
+export const fetchSpaceDetails = async (spaceKey: string): Promise<ApiModels.Space> => {
+  const response = await apiClient.get<ApiModels.Space>(`/spaces/${spaceKey}/`);
   return response.data;
 };
 
 // Pages
-export const fetchPagesInSpace = async (spaceKey: string): Promise<Page[]> => {
-  const response = await apiClient.get<Page[]>(`/spaces/${spaceKey}/pages/`);
+export const fetchPagesInSpace = async (spaceKey: string): Promise<ApiModels.Page[]> => {
+  const response = await apiClient.get<ApiModels.Page[]>(`/spaces/${spaceKey}/pages/`);
   return response.data;
 };
 
-export const fetchPageDetails = async (pageId: string | number): Promise<Page> => {
+export const fetchPageDetails = async (pageId: string | number): Promise<ApiModels.Page> => {
   // The backend endpoint might be /api/v1/pages/{page_id}/
   // Or it might be nested under spaces like /api/v1/spaces/{space_key}/pages/{page_id}/
   // Assuming the former based on typical DRF setups for simplicity.
   // If page IDs are unique across spaces, /api/v1/pages/{page_id}/ is fine.
   // If page IDs are unique only *within* a space, then space_key is needed.
   // For now, let's assume global page IDs for /api/v1/pages/{page_id}/
-  const response = await apiClient.get<Page>(`/pages/${pageId}/`);
+  const response = await apiClient.get<ApiModels.Page>(`/pages/${pageId}/`);
   return response.data;
 };
 
@@ -56,8 +51,8 @@ export const createPage = async (
   title: string,
   rawContent: any,
   parentPageId?: string | number
-): Promise<Page> => {
-  const payload: PageCreatePayload = {
+): Promise<ApiModels.Page> => {
+  const payload: ApiModels.PageCreatePayload = {
     title,
     raw_content: rawContent,
     space_key: spaceKey, // Include spaceKey in payload
@@ -69,8 +64,8 @@ export const createPage = async (
   // OR it could be /api/v1/spaces/{space_key}/pages/
   // Let's assume /api/v1/pages/ and the backend uses `space_key` from payload.
   // If your backend expects POST to /api/v1/spaces/{space_key}/pages/, change to:
-  // const response = await apiClient.post<Page>(`/spaces/${spaceKey}/pages/`, { title, raw_content: rawContent, parent_page_id: parentPageId });
-  const response = await apiClient.post<Page>('/pages/', payload);
+  // const response = await apiClient.post<ApiModels.Page>(`/spaces/${spaceKey}/pages/`, { title, raw_content: rawContent, parent_page_id: parentPageId });
+  const response = await apiClient.post<ApiModels.Page>('/pages/', payload);
   return response.data;
 };
 
@@ -105,11 +100,11 @@ export const updatePage = async (
   pageId: string | number,
   title: string,
   rawContent: any
-): Promise<Page> => {
-  const payload: PageUpdatePayload = { title, raw_content: rawContent };
+): Promise<ApiModels.Page> => {
+  const payload: ApiModels.PageUpdatePayload = { title, raw_content: rawContent };
   // Assuming PATCH is preferred for updates, but PUT is also common.
   // Backend endpoint /api/v1/pages/{page_id}/
-  const response = await apiClient.put<Page>(`/pages/${pageId}/`, payload);
+  const response = await apiClient.put<ApiModels.Page>(`/pages/${pageId}/`, payload);
   return response.data;
 };
 
@@ -123,32 +118,32 @@ export interface SearchParams {
 }
 
 // The backend might return a paginated response like:
-// { count: number, next: string | null, previous: string | null, results: PageSearchSerializer[] }
+// { count: number, next: string | null, previous: string | null, results: ApiModels.PageSearchSerializer[] }
 // For simplicity, this client function currently assumes it returns just the array of results.
 // Adapt as needed based on actual backend response structure.
-export const searchPages = async (params: SearchParams): Promise<PageSearchSerializer[]> => {
-  const response = await apiClient.get<PageSearchSerializer[]>('/search/pages/', { params });
+export const searchPages = async (params: SearchParams): Promise<ApiModels.PageSearchSerializer[]> => {
+  const response = await apiClient.get<ApiModels.PageSearchSerializer[]>('/search/pages/', { params });
   // If backend returns paginated response:
-  // const response = await apiClient.get<{ results: PageSearchSerializer[] }>('/search/pages/', { params });
+  // const response = await apiClient.get<{ results: ApiModels.PageSearchSerializer[] }>('/search/pages/', { params });
   // return response.data.results;
   return response.data;
 };
 
 
 // Permissions API
-export const getSpacePermissions = async (spaceKey: string): Promise<SpacePermissionData> => {
-  const response = await apiClient.get<SpacePermissionData>(`/workspaces/spaces/${spaceKey}/permissions/`);
+export const getSpacePermissions = async (spaceKey: string): Promise<ApiModels.SpacePermissionData> => {
+  const response = await apiClient.get<ApiModels.SpacePermissionData>(`/workspaces/spaces/${spaceKey}/permissions/`);
   return response.data;
 };
 
 export const assignUserSpacePermission = async (spaceKey: string, userId: number, permissions: string[]): Promise<any> => {
-  const payload: AssignPermissionPayload = { user_id: userId, permission_codenames: permissions };
+  const payload: ApiModels.AssignPermissionPayload = { user_id: userId, permission_codenames: permissions };
   const response = await apiClient.post(`/workspaces/spaces/${spaceKey}/permissions/user/`, payload);
   return response.data;
 };
 
 export const assignGroupSpacePermission = async (spaceKey: string, groupId: number, permissions: string[]): Promise<any> => {
-  const payload: AssignPermissionPayload = { group_id: groupId, permission_codenames: permissions };
+  const payload: ApiModels.AssignPermissionPayload = { group_id: groupId, permission_codenames: permissions };
   const response = await apiClient.post(`/workspaces/spaces/${spaceKey}/permissions/group/`, payload);
   return response.data;
 };
@@ -164,29 +159,29 @@ export const removeGroupFromSpacePermissions = async (spaceKey: string, groupId:
 };
 
 // User and Group List API
-export const listUsers = async (): Promise<User[]> => {
-  const response = await apiClient.get<User[]>('/identity/users/');
+export const listUsers = async (): Promise<ApiModels.User[]> => {
+  const response = await apiClient.get<ApiModels.User[]>('/identity/users/');
   return response.data;
 };
 
-export const listGroups = async (): Promise<Group[]> => {
-  const response = await apiClient.get<Group[]>('/identity/groups/');
+export const listGroups = async (): Promise<ApiModels.Group[]> => {
+  const response = await apiClient.get<ApiModels.Group[]>('/identity/groups/');
   return response.data;
 };
 
 // FallbackMacro API
-export const getFallbackMacroDetails = async (macroId: number): Promise<FallbackMacro> => {
+export const getFallbackMacroDetails = async (macroId: number): Promise<ApiModels.FallbackMacro> => {
   // Assuming the URL is /api/v1/io/fallback-macros/{macroId}/ based on Part 1 plan
-  const response = await apiClient.get<FallbackMacro>(`/io/fallback-macros/${macroId}/`);
+  const response = await apiClient.get<ApiModels.FallbackMacro>(`/io/fallback-macros/${macroId}/`);
   return response.data;
 };
 
 // Diagram Validation API
-export const validateMermaidSyntax = async (syntax: string): Promise<MermaidValidationResponse> => {
-  const payload: MermaidValidationRequest = { syntax };
+export const validateMermaidSyntax = async (syntax: string): Promise<ApiModels.MermaidValidationResponse> => {
+  const payload: ApiModels.MermaidValidationRequest = { syntax };
   // The task mentioned it might be in importer.views - if so, /api/v1/io/diagrams/validate/mermaid/
   // Adjusting to match the likely backend location based on previous tasks.
-  const response = await apiClient.post<MermaidValidationResponse>('/io/diagrams/validate/mermaid/', payload);
+  const response = await apiClient.post<ApiModels.MermaidValidationResponse>('/io/diagrams/validate/mermaid/', payload);
   return response.data;
 };
 
