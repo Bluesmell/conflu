@@ -1,168 +1,239 @@
-## API Reference (High-Level)
+## API Reference (High-Level Summary)
 
-This document provides a basic overview of known API endpoints.
-**Note:** Details regarding exact request/response schemas, all query parameters, specific authentication nuances per endpoint, and comprehensive status codes are not included here and would typically be found in a Swagger/OpenAPI specification.
+This document provides a manually-derived summary of known API endpoints, primarily based on frontend service analysis and backend code investigation.
 
----
+**Primary Source of Truth**: For detailed and authoritative API specifications, please refer to the auto-generated documentation provided by `drf-spectacular`:
+*   **Swagger UI**: `/api/v1/schema/swagger-ui/`
+*   **ReDoc**: `/api/v1/schema/redoc/`
 
-### Spaces
+**Note:** Details regarding exact request/response schemas, all query parameters, comprehensive status codes, and nuances of authentication/authorization per endpoint are best found in the `drf-spectacular` schemas. This document aims to provide a quick reference and overview.
 
-*   **`GET /spaces/`**
-    *   Description: Fetches a list of all spaces.
-    *   Frontend Usage: `fetchSpaces()`
-    *   Request Body: None
-    *   Response Body: Array of Space objects (e.g., `[{ id, key, name, description }, ...]`)
-    *   Permissions: Likely requires authentication.
-
-*   **`GET /spaces/{spaceKey}/`**
-    *   Description: Fetches details for a specific space.
-    *   Frontend Usage: `fetchSpaceDetails(spaceKey)`
-    *   Path Parameters: `spaceKey` (string)
-    *   Request Body: None
-    *   Response Body: Space object.
-    *   Permissions: Likely requires authentication, possibly space-specific view permission.
+Base URL for all endpoints: `/api/v1` (proxied to the Django backend)
 
 ---
 
-### Pages
+### Authentication (`dj-rest-auth`)
 
-*   **`GET /spaces/{spaceKey}/pages/`**
-    *   Description: Fetches a list of pages within a specific space.
-    *   Frontend Usage: `fetchPagesInSpace(spaceKey)`
-    *   Path Parameters: `spaceKey` (string)
-    *   Request Body: None
-    *   Response Body: Array of Page objects.
-    *   Permissions: Likely requires authentication, space-specific view permission.
-
-*   **`GET /pages/{pageId}/`**
-    *   Description: Fetches details for a specific page.
-    *   Frontend Usage: `fetchPageDetails(pageId)`
-    *   Path Parameters: `pageId` (string or number)
-    *   Request Body: None
-    *   Response Body: Page object.
-    *   Permissions: Likely requires authentication, page/space view permission.
-
-*   **`POST /pages/`**
-    *   Description: Creates a new page.
-    *   Frontend Usage: `createPage(spaceKey, title, rawContent, parentPageId?)`
-    *   Request Body: `PageCreatePayload` (e.g., `{ title, raw_content, space_key, parent_page_id? }`)
-    *   Response Body: Created Page object.
-    *   Permissions: Likely requires authentication, space-specific create page permission.
-
-*   **`PUT /pages/{pageId}/`**
-    *   Description: Updates an existing page.
-    *   Frontend Usage: `updatePage(pageId, title, rawContent)`
-    *   Path Parameters: `pageId` (string or number)
-    *   Request Body: `PageUpdatePayload` (e.g., `{ title, raw_content }`)
-    *   Response Body: Updated Page object.
-    *   Permissions: Likely requires authentication, page/space edit permission.
-
+*   **Paths**:
+    *   `/auth/` (e.g., login, logout, password change, user details)
+    *   `/auth/registration/` (e.g., user registration)
+*   **Description**: Standard authentication and registration endpoints provided by `dj-rest-auth` and `django-allauth`.
+*   **Details**: Please refer to the `dj-rest-auth` and `django-allauth` documentation for specific endpoint paths (e.g., `/auth/login/`, `/auth/logout/`, `/auth/password/reset/`, `/auth/registration/verify-email/`, etc.), request/response schemas, and behavior.
+*   **Permissions**: Vary by endpoint (e.g., public for registration/login, authenticated for logout/password change).
 
 ---
 
-### Importer (Confluence)
+### Workspaces & Spaces
 
-*   **`GET /io/import/confluence/status/{uploadId}/`**
-    *   Description: Gets the status of a Confluence import task.
-    *   Frontend Usage: `getConfluenceImportStatus(uploadId)`
-    *   Path Parameters: `uploadId` (string or number)
-    *   Response Body: `ConfluenceUpload` object (details from `importerModels.ts`).
-    *   Permissions: Likely requires authentication.
-
-*   **`POST /io/import/confluence/`**
-    *   Description: Initiates a Confluence import.
-    *   Frontend Usage: `initiateConfluenceImport(file, targetWorkspaceId?, targetSpaceId?)`
-    *   Request Body: `FormData` containing the file and optional `target_workspace_id`, `target_space_id`.
-    *   Content-Type: `multipart/form-data`
-    *   Response Body: `ConfluenceUpload` object.
-    *   Permissions: Likely requires authentication and import permissions.
+*   **Path**: `/workspaces/spaces/`
+    *   *Note*: An older path ` /spaces/` might exist from frontend usage but `/workspaces/spaces/` is the one explicitly defined in `workspaces.urls.py` and should be preferred.
+*   **View/ViewSet**: `workspaces.views.SpaceViewSet`
+*   **Description**: Manages workspaces and spaces.
+*   **Methods**: Standard ModelViewSet actions (GET list, POST create, GET retrieve, PUT update, PATCH partial_update, DELETE destroy).
+*   **Lookup Field**: `key` (e.g., `/workspaces/spaces/{spaceKey}/`)
+*   **Serializer**: `workspaces.serializers.SpaceSerializer`
+*   **Permissions**: `core.permissions.DjangoObjectPermissionsOrAnonReadOnly`
+*   **Notes**:
+    *   `DELETE` operations perform a soft delete (marks the space as inactive).
 
 ---
 
-### Search
+### Space Permissions
 
-*   **`GET /search/pages/`**
-    *   Description: Searches for pages.
-    *   Frontend Usage: `searchPages(params)`
-    *   Query Parameters: `q` (string, search query), `space_key` (optional string). Potentially others for pagination.
-    *   Response Body: Array of `PageSearchSerializer` objects.
-    *   Permissions: Likely requires authentication.
+*   **Base Path**: `/workspaces/spaces/{spaceKey}/permissions/`
+    *   Path Parameter: `spaceKey` (string) - Key of the space to manage permissions for.
+
+*   **`GET /`**
+    *   **View**: `workspaces.views.ListSpacePermissionsView`
+    *   **Description**: Lists all user and group permissions for the specified space.
+    *   **Serializers**: `workspaces.serializers.SpaceUserPermissionSerializer`, `workspaces.serializers.SpaceGroupPermissionSerializer`
+    *   **Permissions**: Requires `workspaces.admin_space` object permission on the space.
+
+*   **`POST user/`**
+    *   **View**: `workspaces.views.AssignUserSpacePermissionView`
+    *   **Description**: Assigns specified permissions to a user for the space.
+    *   **Request Serializer**: `workspaces.serializers.AssignUserPermissionSerializer` (e.g., `{ "user_id": <id>, "permission_codenames": ["codename1", "codename2"] }`)
+    *   **Permissions**: Requires `workspaces.admin_space` object permission on the space.
+
+*   **`POST group/`**
+    *   **View**: `workspaces.views.AssignGroupSpacePermissionView`
+    *   **Description**: Assigns specified permissions to a group for the space.
+    *   **Request Serializer**: `workspaces.serializers.AssignGroupPermissionSerializer` (e.g., `{ "group_id": <id>, "permission_codenames": ["codename1", "codename2"] }`)
+    *   **Permissions**: Requires `workspaces.admin_space` object permission on the space.
+
+*   **`DELETE user/{userId}/`**
+    *   **View**: `workspaces.views.RemoveUserSpacePermissionsView`
+    *   **Description**: Removes all permissions for a specific user from the space.
+    *   **Path Parameter**: `userId` (integer)
+    *   **Permissions**: Requires `workspaces.admin_space` object permission on the space.
+
+*   **`DELETE group/{groupId}/`**
+    *   **View**: `workspaces.views.RemoveGroupSpacePermissionsView`
+    *   **Description**: Removes all permissions for a specific group from the space.
+    *   **Path Parameter**: `groupId` (integer)
+    *   **Permissions**: Requires `workspaces.admin_space` object permission on the space.
 
 ---
 
-### Workspace & Space Permissions
+### Content (Pages)
 
-*   **`GET /workspaces/spaces/{spaceKey}/permissions/`**
-    *   Description: Gets permissions for a specific space.
-    *   Frontend Usage: `getSpacePermissions(spaceKey)`
-    *   Path Parameters: `spaceKey` (string)
-    *   Response Body: `SpacePermissionData` object.
-    *   Permissions: Requires auth, likely space admin or specific permission to view permissions.
+*   **Path**: `/content/pages/`
+    *   *Note*: An older path `/pages/` might exist from frontend usage but `/content/pages/` is the one explicitly defined in `pages.urls.py` and should be preferred.
+*   **View/ViewSet**: `pages.views.PageViewSet`
+*   **Description**: Manages content pages.
+*   **Methods**: Standard ModelViewSet actions (GET list, POST create, GET retrieve, PUT update, PATCH partial_update, DELETE destroy).
+*   **Serializer**: `pages.serializers.PageSerializer`
+*   **Permissions**: `core.permissions.ExtendedDjangoObjectPermissionsOrAnonReadOnly`
+*   **Notes**:
+    *   `DELETE` operations perform a hard delete.
+*   **Custom Actions** (on detail route `/content/pages/{pk}/<action>/`):
+    *   **`tags/` (POST)**
+        *   Description: Adds a tag to the page.
+        *   Request Body: `{ "tag": "name_or_id" }` (tag name or existing tag ID)
+    *   **`tags/{tag_pk_or_name}/` (DELETE)**
+        *   Description: Removes a tag from the page.
+        *   Path Parameter: `tag_pk_or_name` (integer ID or string name of the tag)
+    *   **`revert/{version_number_str}/` (POST)**
+        *   Description: Reverts the page to a specific version.
+        *   Path Parameter: `version_number_str` (string, e.g., "1", "2.1")
+        *   Request Body: Optional `{ "commit_message": "Your reason for reverting" }`
 
-*   **`POST /workspaces/spaces/{spaceKey}/permissions/user/`**
-    *   Description: Assigns space permissions to a user.
-    *   Frontend Usage: `assignUserSpacePermission(spaceKey, userId, permissions)`
-    *   Path Parameters: `spaceKey` (string)
-    *   Request Body: `AssignPermissionPayload` (e.g., `{ user_id, permission_codenames }`)
-    *   Response Body: Success message or updated permission data.
-    *   Permissions: Requires auth, likely space admin.
+---
 
-*   **`POST /workspaces/spaces/{spaceKey}/permissions/group/`**
-    *   Description: Assigns space permissions to a group.
-    *   Frontend Usage: `assignGroupSpacePermission(spaceKey, groupId, permissions)`
-    *   Path Parameters: `spaceKey` (string)
-    *   Request Body: `AssignPermissionPayload` (e.g., `{ group_id, permission_codenames }`)
-    *   Response Body: Success message or updated permission data.
-    *   Permissions: Requires auth, likely space admin.
+### Page Versions
 
-*   **`DELETE /workspaces/spaces/{spaceKey}/permissions/user/{userId}/`**
-    *   Description: Removes a user's permissions from a space.
-    *   Frontend Usage: `removeUserFromSpacePermissions(spaceKey, userId)`
-    *   Path Parameters: `spaceKey` (string), `userId` (number)
-    *   Response Body: Success message.
-    *   Permissions: Requires auth, likely space admin.
+*   **Path**: `/pageversions/`
+*   **View/ViewSet**: `pages.views.PageVersionViewSet` (registered in `api.urls`)
+*   **Description**: Provides access to page version history.
+*   **Methods**: ReadOnlyModelViewSet actions (GET list, GET retrieve).
+*   **Serializer**: `pages.serializers.PageVersionSerializer`
+*   **Permissions**: `rest_framework.permissions.IsAuthenticatedOrReadOnly`
 
-*   **`DELETE /workspaces/spaces/{spaceKey}/permissions/group/{groupId}/`**
-    *   Description: Removes a group's permissions from a space.
-    *   Frontend Usage: `removeGroupFromSpacePermissions(spaceKey, groupId)`
-    *   Path Parameters: `spaceKey` (string), `groupId` (number)
-    *   Response Body: Success message.
-    *   Permissions: Requires auth, likely space admin.
+---
+
+### Tags
+
+*   **Path**: `/tags/`
+*   **View/ViewSet**: `pages.views.TagViewSet` (registered in `api.urls`)
+*   **Description**: Manages tags that can be applied to pages.
+*   **Methods**: Standard ModelViewSet actions.
+*   **Serializer**: `pages.serializers.TagSerializer`
+*   **Permissions**: `rest_framework.permissions.IsAuthenticatedOrReadOnly`
+
+---
+
+### Attachments
+
+*   **Path**: `/attachments/`
+*   **View/ViewSet**: `attachments.views.AttachmentViewSet` (registered in `api.urls`)
+*   **Description**: Manages file attachments for pages.
+*   **Methods**: Standard ModelViewSet actions.
+*   **Serializer**: `attachments.serializers.AttachmentSerializer`
+*   **Permissions**: `core.permissions.ExtendedDjangoObjectPermissionsOrAnonReadOnly`
+*   **Query Parameters**:
+    *   Can be filtered by `page` ID (e.g., `/attachments/?page=<page_id>`).
+*   **Custom Actions** (on detail route `/attachments/{pk}/<action>/`):
+    *   **`download/` (GET)**
+        *   Description: Provides a secure download link/redirect for the attachment file. Checks scan status before allowing download.
+
+---
+
+### User Notifications
+
+*   **Path**: `/notifications/`
+*   **View/ViewSet**: `user_notifications.views.NotificationViewSet` (registered in `api.urls`)
+*   **Description**: Manages notifications for the currently authenticated user.
+*   **Methods**: GET list, GET retrieve, PUT update, PATCH partial_update, DELETE destroy. (Direct POST for creation is not typically exposed; notifications are usually system-generated).
+*   **Queryset**: Automatically filtered to the notifications of the requesting user.
+*   **Serializer**: `user_notifications.serializers.NotificationSerializer`
+*   **Permissions**: `rest_framework.permissions.IsAuthenticated`
+*   **Custom Actions**:
+    *   **`mark-all-as-read/` (POST, list route)**: Marks all of the user's notifications as read.
+    *   **`{pk}/mark-as-read/` (POST, detail route)**: Marks a specific notification as read.
+
+---
+
+### Activity Log
+
+*   **Path**: `/activities/`
+*   **View/ViewSet**: `core.views.ActivityViewSet` (registered in `api.urls`)
+*   **Description**: Provides a read-only log of activities within the system.
+*   **Methods**: ReadOnlyModelViewSet actions (GET list, GET retrieve).
+*   **Serializer**: `core.serializers.ActivitySerializer`
+*   **Permissions**: `rest_framework.permissions.IsAuthenticated`
 
 ---
 
 ### Identity (Users & Groups)
 
-*   **`GET /identity/users/`**
-    *   Description: Lists users in the system.
-    *   Frontend Usage: `listUsers()`
-    *   Response Body: Array of User objects.
-    *   Permissions: Requires auth, possibly admin/specific permission.
+*   **Users Path**: `/identity/users/`
+    *   **View**: `users.views.UserListView`
+    *   **Description**: Lists users in the system.
+    *   **Methods**: GET list.
+    *   **Serializer**: `users.serializers.UserSimpleSerializer`
+    *   **Permissions**: `rest_framework.permissions.IsAuthenticated`
 
-*   **`GET /identity/groups/`**
-    *   Description: Lists groups in the system.
-    *   Frontend Usage: `listGroups()`
-    *   Response Body: Array of Group objects.
-    *   Permissions: Requires auth, possibly admin/specific permission.
-
----
-
-### Fallback Macros
-
-*   **`GET /io/fallback-macros/{macroId}/`**
-    *   Description: Gets details for a specific fallback macro.
-    *   Frontend Usage: `getFallbackMacroDetails(macroId)`
-    *   Path Parameters: `macroId` (number)
-    *   Response Body: `FallbackMacro` object.
-    *   Permissions: Requires auth.
+*   **Groups Path**: `/identity/groups/`
+    *   **View**: `users.views.GroupListView`
+    *   **Description**: Lists groups in the system.
+    *   **Methods**: GET list.
+    *   **Serializer**: `users.serializers.GroupSerializer`
+    *   **Permissions**: `rest_framework.permissions.IsAuthenticated`
 
 ---
 
-### Diagram Validation
+### Importer (IO Operations)
 
-*   **`POST /io/diagrams/validate/mermaid/`**
-    *   Description: Validates Mermaid diagram syntax.
-    *   Frontend Usage: `validateMermaidSyntax(syntax)`
-    *   Request Body: `MermaidValidationRequest` (e.g., `{ syntax }`)
-    *   Response Body: `MermaidValidationResponse` object (e.g., `{ is_valid, error_message }`).
-    *   Permissions: Requires auth.
+*   **Base Path**: `/io/`
+
+*   **Confluence Import**:
+    *   **Path**: `import/confluence/`
+    *   **View**: `importer.views.ConfluenceImportView`
+    *   **Description**: Initiates a Confluence import process.
+    *   **Methods**: POST.
+    *   **Request Body**: `FormData` (`file`, `target_workspace_id?` (int), `target_space_id?` (int)).
+    *   **Validation Serializer**: `importer.serializers.ConfluenceUploadSerializer` (used internally for validation of parameters).
+    *   **Permissions**: `rest_framework.permissions.IsAuthenticated`
+
+*   **Confluence Import Status**:
+    *   **Path**: `import/confluence/status/{pk}/`
+    *   **View**: `importer.views.ConfluenceUploadStatusView`
+    *   **Description**: Gets the status of a specific Confluence import task.
+    *   **Methods**: GET retrieve.
+    *   **Path Parameter**: `pk` (integer ID of the ConfluenceUpload record).
+    *   **Serializer**: `importer.serializers.ConfluenceUploadSerializer`
+    *   **Permissions**: `rest_framework.permissions.IsAuthenticated`
+
+*   **Fallback Macros**:
+    *   **Path**: `fallback-macros/{pk}/`
+    *   **View**: `importer.views.FallbackMacroDetailView`
+    *   **Description**: Retrieves details of a specific fallback macro instance.
+    *   **Methods**: GET retrieve.
+    *   **Path Parameter**: `pk` (integer ID of the FallbackMacro record).
+    *   **Serializer**: `importer.serializers.FallbackMacroSerializer`
+    *   **Permissions**: `rest_framework.permissions.IsAuthenticated`
+
+*   **Diagram Validation (Mermaid)**
+    *   **Path**: `diagrams/validate/mermaid/`
+    *   **View**: (Likely `importer.views.MermaidDiagramValidationView` - exact name to be confirmed if different)
+    *   **Description**: Validates Mermaid diagram syntax.
+    *   **Methods**: POST
+    *   **Request Body**: `{ "syntax": "mermaid_diagram_string" }` (corresponds to `MermaidValidationRequest` in frontend)
+    *   **Response Body**: `{ "is_valid": true/false, "error_message": "..." }` (corresponds to `MermaidValidationResponse` in frontend)
+    *   **Permissions**: `rest_framework.permissions.IsAuthenticated`
+
+---
+
+### Page Search
+
+*   **Path**: `/content/search/pages/` (defined in `pages.urls`)
+*   **View**: `pages.views.PageSearchView`
+*   **Description**: Searches for pages based on a query.
+*   **Methods**: GET list.
+*   **Query Parameters**:
+    *   `q` (string): The search query.
+    *   `space_key` (string, optional): Key of a space to limit search results.
+*   **Serializer**: `pages.serializers.PageSearchSerializer`
+*   **Permissions**: `rest_framework.permissions.IsAuthenticatedOrReadOnly`
+
+---
